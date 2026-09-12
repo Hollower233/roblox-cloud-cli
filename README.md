@@ -156,3 +156,27 @@ npm run test:live
 - [群组接口](https://create.roblox.com/docs/cloud/reference/features/groups)
 - [Universe 接口](https://create.roblox.com/docs/cloud/reference/features/universes)
 - [官方 OpenAPI 定义](https://github.com/Roblox/creator-docs/blob/main/content/en-us/reference/cloud/openapi.json)
+
+## 清理本机游戏素材缓存（Windows）
+
+```sh
+rbx cache clear
+```
+
+此命令无需 API Key，不联网；始终返回一个 JSON 对象（无需 `--json`），不弹窗、不询问、不终止进程。它不清理 CLI 的游戏目录缓存，`--home` 不改变 Roblox 素材缓存位置。
+
+删除前检查 Roblox Studio 和 Player。任意一个仍在运行时，整次清理不执行，退出码为 1。agent 应根据 `code`、`actionRequired` 和 `processes` 提示用户自行关闭相应程序，等待用户关闭后重新调用；不得把 blocked 当成清理完成。
+
+```json
+{"schemaVersion":1,"status":"blocked","code":"STUDIO_RUNNING","actionRequired":"close_studio","processes":[{"name":"RobloxStudioBeta","pid":123}],"targets":[]}
+```
+
+Player 对应 `PLAYER_RUNNING` / `close_player`。两者都在时优先返回 Studio 动作，`processes` 包含检测到的相关进程。进程检查失败返回 `PROCESS_CHECK_FAILED`，同样不删除文件。
+
+清理范围固定为 `%LOCALAPPDATA%/Roblox/` 下的 `rbx-storage`、`rbx-storage-sc`、`rbx-storage.db`、`rbx-storage.db-wal`、`rbx-storage.db-shm`，以及 `%TEMP%/Roblox/` 下的 `sounds`、`http`、`http-wob`。保留项目、安装目录、插件、配置和其他临时目录；拒绝链接形式的缓存目标。
+
+成功返回 `status: success` / `code: CACHE_CLEARED`，退出码 0；逐项结果在 `targets`，状态为 `deleted` 或 `absent`。遇到占用、访问错误或复查时缓存重新生成，返回 `status: partial` / `code: CACHE_CLEAR_INCOMPLETE`，退出码 3，失败项带系统错误码。agent 应报告残留，不能宣称已完成无缓存测试。
+
+此命令的 JSON 契约在顶层直接返回 `code`、`processes`、`targets`，区别于其他命令的 `data` 包装。非 Windows 返回 `UNSUPPORTED_PLATFORM`；路径缺失或无法检查时也阻止执行。
+
+缓存位置是当前版本的固定清单，未来 Roblox 更新后可能需要调整。成功只表示复查时这些目标不存在；检测后用户重新启动程序仍可能产生新缓存。首次加载测试应清理后直接进入目标游戏。

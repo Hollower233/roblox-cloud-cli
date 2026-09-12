@@ -22,3 +22,9 @@
 - 单条数据读取与跨游戏复制：`src/datastores/entries.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/datastores.test.ts`；本地备份：应用数据目录下的 `datastore-backups/`。
+
+## 本机素材缓存
+
+- 清理模块：`src/cache/assets.ts`；SDK 导出：`src/index.ts`。
+- 命令入口：`src/cli/main.ts`；离线验证：`tests/asset-cache.test.ts`。
+- 缓存位置：`%LOCALAPPDATA%/Roblox/rbx-storage*` 与 `%TEMP%/Roblox/` 下的 `sounds`、`http`、`http-wob`。

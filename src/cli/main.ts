@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from 'commander';
 import password from '@inquirer/password';
+import { clearAssetCache } from '../cache/assets.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DataStoreEntries } from '../datastores/entries.js';
@@ -113,6 +114,14 @@ datastore.command('copy <sourceUniverseId> <targetUniverseId> <datastore> <key>'
     const address = { datastore: name, key, scope: options.scope };
     const result = await entries.copy({ ...address, universeId: sourceUniverseId }, { ...address, universeId: targetUniverseId }, resolve(local.home, 'datastore-backups'));
     emit(result, json(), `Copied and verified ${result.bytes} bytes. Backup: ${result.backupPath}`);
+  });
+
+program.command('cache').description('Manage local Roblox asset caches')
+  .command('clear').description('Clear Windows asset caches; always returns JSON, never prompts or stops processes')
+  .action(async () => {
+    const result = await clearAssetCache();
+    process.stdout.write(JSON.stringify({ schemaVersion: 1, ...result }) + '\n');
+    process.exitCode = result.status === 'success' ? 0 : result.status === 'partial' ? 3 : 1;
   });
 
 try { await program.parseAsync(process.argv); }
