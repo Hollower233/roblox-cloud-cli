@@ -1,0 +1,9 @@
+export { HttpClient } from './transport/http-client.js';
+export type { HttpOptions } from './transport/http-client.js';
+export { RobloxApi } from './roblox/api.js';
+export { CatalogService, selectGames } from './universes/catalog.js';
+export type { CatalogOptions } from './universes/catalog.js';
+export * from './universes/models.js';
+export { LocalStore, defaultHome } from './storage/store.js';
+export { CredentialStore } from './auth/credentials.js';
+export { AppError } from './core/errors.js';

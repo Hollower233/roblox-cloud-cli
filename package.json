@@ -1,0 +1,21 @@
+{
+  "name": "@hollower233/roblox-cloud-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Roblox Cloud CLI and SDK for credentials and a verified local universe catalog",
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "bin": { "rbx": "dist/cli/main.js" },
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc -p tsconfig.check.json",
+    "test": "tsx --test tests/*.test.ts",
+    "test:live": "tsx scripts/live-smoke.ts",
+    "dev": "tsx src/cli/main.ts"
+  },
+  "dependencies": { "@inquirer/password": "5.2.2", "commander": "15.0.0" },
+  "devDependencies": { "@types/node": "^24.0.0", "tsx": "4.23.13", "typescript": "7.0.2" }
+}
