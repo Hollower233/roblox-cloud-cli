@@ -16,3 +16,9 @@
 - 离线测试与虚构响应样例：`tests/`、`tests/fixtures/`。
 - 真实 API 冒烟测试：`scripts/live-smoke.ts`。
 - 使用文档与 CI：`README.md`、`.github/workflows/ci.yml`。
+
+## DataStore
+
+- 单条数据读取与跨游戏复制：`src/datastores/entries.ts`。
+- 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
+- 离线验证：`tests/datastores.test.ts`；本地备份：应用数据目录下的 `datastore-backups/`。

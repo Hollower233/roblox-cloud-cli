@@ -1,6 +1,6 @@
 # Roblox Cloud CLI
 
-独立的 Roblox Cloud 命令行工具与 TypeScript SDK。第一版提供 API Key 管理、游戏扫描、本地缓存、权限验证和游戏列表。DataStore 复制、发布与分析尚未实现。
+独立的 Roblox Cloud 命令行工具与 TypeScript SDK。提供 API Key 管理、游戏扫描、本地缓存、权限验证、游戏列表，以及标准 DataStore 单条读取与跨游戏复制。发布与分析尚未实现。
 
 ## 安装与启动
 
@@ -34,7 +34,7 @@ rbx auth clear
 - `legacy-group:manage`：可管理群组查询。
 - `legacy-universe:manage`：Universe 管理权限查询。
 
-这些名称来自 Roblox 官方接口定义。虽命名为 manage，本工具当前调用的相关接口都是只读查询。DataStore 权限暂不参与第一版命令。API Key 的 scope 和账号的实际游戏权限是两层约束。
+这些名称来自 Roblox 官方接口定义。虽命名为 manage，游戏目录命令调用的相关接口都是只读查询。DataStore 命令另需相应的读取、创建或更新权限。API Key 的 scope 和账号的实际游戏权限是两层约束。
 
 ## 游戏目录
 
@@ -142,7 +142,13 @@ npm run test:live
 
 ## 扩展顺序
 
-后续在同一仓库添加 DataStore 读取模块，再加入跨 Universe 复制工作流；发布和分析分别作为业务模块接入。它们复用凭证、HTTP、错误、输出和存储适配器。第一版不包含动态插件系统或数据写入工作流。
+标准 DataStore 单条读取与跨 Universe 复制已接入；后续发布和分析分别作为业务模块扩展，复用凭证、HTTP、错误、输出和存储适配器。目前不包含动态插件系统。
+
+## DataStore 模块
+
+- 读取与单条复制：`src/datastores/entries.ts`。
+- CLI 命令入口：`src/cli/main.ts`；公共 SDK 导出：`src/index.ts`。
+- 离线测试：`tests/datastores.test.ts`；备份文件：应用数据目录的 `datastore-backups/`。
 
 ## 官方资料
 

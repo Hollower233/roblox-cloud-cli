@@ -7,3 +7,5 @@ export * from './universes/models.js';
 export { LocalStore, defaultHome } from './storage/store.js';
 export { CredentialStore } from './auth/credentials.js';
 export { AppError } from './core/errors.js';
+export { DataStoreEntries } from './datastores/entries.js';
+export type { EntryAddress, EntrySnapshot } from './datastores/entries.js';

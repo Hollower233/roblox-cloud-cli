@@ -3,6 +3,7 @@ import { Command, CommanderError } from 'commander';
 import password from '@inquirer/password';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { DataStoreEntries } from '../datastores/entries.js';
 import { CredentialStore, validateKey } from '../auth/credentials.js';
 import { AppError, errorInfo, exitCode, id } from '../core/errors.js';
 import { HttpClient } from '../transport/http-client.js';
@@ -95,6 +96,23 @@ universe.command('list').description('Read the local cache only; never calls Rob
     if (!catalog) throw new AppError('ARGUMENT_ERROR', 'No cached catalog; run universe scan first.');
     const games = selectGames(catalog, options);
     emit({ ...catalog, games }, json(), renderCatalog(catalog, games), catalog.warnings);
+  });
+
+const datastore = program.command('datastore').description('Read and copy standard DataStore entries');
+datastore.command('get <universeId> <datastore> <key>').option('--scope <scope>', 'DataStore scope', 'global')
+  .action(async (universeId, name, key, options) => {
+    const local = store(), apiKey = await new CredentialStore(local.home).get();
+    const entry = await new DataStoreEntries(new HttpClient({ apiKey, signal: abort.signal })).get({ universeId, datastore: name, key, scope: options.scope });
+    emit({ entry }, json(), entry ? entry.raw : 'Entry does not exist.');
+  });
+datastore.command('copy <sourceUniverseId> <targetUniverseId> <datastore> <key>').option('--scope <scope>', 'DataStore scope', 'global')
+  .description('Copy one entry, backing up locally and conditionally replacing the target, then verify')
+  .action(async (sourceUniverseId, targetUniverseId, name, key, options) => {
+    const local = store(), apiKey = await new CredentialStore(local.home).get();
+    const entries = new DataStoreEntries(new HttpClient({ apiKey, signal: abort.signal }));
+    const address = { datastore: name, key, scope: options.scope };
+    const result = await entries.copy({ ...address, universeId: sourceUniverseId }, { ...address, universeId: targetUniverseId }, resolve(local.home, 'datastore-backups'));
+    emit(result, json(), `Copied and verified ${result.bytes} bytes. Backup: ${result.backupPath}`);
   });
 
 try { await program.parseAsync(process.argv); }

@@ -25,12 +25,15 @@ export class HttpClient {
     this.queues.set(host, task);
     await task;
   }
-  async request<T>(url: string, options: { auth?: boolean; body?: unknown } = {}): Promise<T> {
+  async request<T>(url: string, options: { auth?: boolean; body?: unknown; rawBody?: string; headers?: Record<string, string>; rawResponse?: boolean } = {}): Promise<T> {
     const target = new URL(url);
     if (target.protocol !== 'https:' || !hosts.has(target.host) || target.username || target.password) throw new AppError('ARGUMENT_ERROR', 'Unsupported Roblox API destination.');
     if (options.auth && target.host !== 'apis.roblox.com') throw new AppError('ARGUMENT_ERROR', 'API keys may only be sent to apis.roblox.com.');
     if (options.auth && !this.options.apiKey) throw new AppError('AUTH_REQUIRED', 'Configure an API key first.');
-    const retryable = options.body === undefined;
+    const retryable = options.body === undefined && options.rawBody === undefined;
+    for (const name of Object.keys(options.headers ?? {})) {
+      if (!['content-md5', 'roblox-entry-attributes', 'roblox-entry-userids'].includes(name)) throw new AppError('ARGUMENT_ERROR', 'Unsupported request header.');
+    }
     for (let attempt = 0; ; attempt++) {
       try {
         this.options.signal?.throwIfAborted();
@@ -38,9 +41,9 @@ export class HttpClient {
         const timeout = AbortSignal.timeout(this.options.timeoutMs ?? 25_000);
         const signal = this.options.signal ? AbortSignal.any([timeout, this.options.signal]) : timeout;
         const response = await this.fetcher(target, {
-          method: options.body === undefined ? 'GET' : 'POST',
-          headers: { Accept: 'application/json', ...(options.auth ? { 'x-api-key': this.options.apiKey! } : {}), ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
-          body: options.body === undefined ? undefined : JSON.stringify(options.body),
+          method: retryable ? 'GET' : 'POST',
+          headers: { Accept: 'application/json', ...options.headers, ...(options.auth ? { 'x-api-key': this.options.apiKey! } : {}), ...(retryable ? {} : { 'Content-Type': 'application/json' }) },
+          body: options.rawBody ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
           redirect: 'error', signal,
         });
         if (!response.ok) {
@@ -56,6 +59,7 @@ export class HttpClient {
           const code = response.status === 401 ? 'AUTH_INVALID' : response.status === 403 ? 'FORBIDDEN' : 'HTTP_ERROR';
           throw new AppError(code, `Roblox ${target.pathname} returned HTTP ${response.status}.`, response.status);
         }
+        if (options.rawResponse) return { status: response.status, text: await response.text(), headers: Object.fromEntries(response.headers) } as T;
         try { return await response.json() as T; }
         catch { throw new AppError('INVALID_RESPONSE', 'Roblox returned invalid JSON.'); }
       } catch (error) {
