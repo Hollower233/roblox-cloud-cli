@@ -180,3 +180,22 @@ Player 对应 `PLAYER_RUNNING` / `close_player`。两者都在时优先返回 St
 此命令的 JSON 契约在顶层直接返回 `code`、`processes`、`targets`，区别于其他命令的 `data` 包装。非 Windows 返回 `UNSUPPORTED_PLATFORM`；路径缺失或无法检查时也阻止执行。
 
 缓存位置是当前版本的固定清单，未来 Roblox 更新后可能需要调整。成功只表示复查时这些目标不存在；检测后用户重新启动程序仍可能产生新缓存。首次加载测试应清理后直接进入目标游戏。
+
+## 玩家存档复制预设
+
+`profile copy` 默认使用 `profileservice` 预设：DataStore 为 `Default`，Key 为全大写 `PLAYER_{uid}`，scope 为 `global`。这是本项目的命名约定，不是 ProfileService 强制的格式。
+
+```sh
+rbx profile copy "Example Production" "Example Development" --players "ExamplePlayerOne,ExamplePlayerTwo"
+rbx profile copy 123456789 987654321 --players "12345,67890" --preset profileservice --json
+```
+
+源、目标支持 Universe ID 或本地目录中的完整游戏名称（忽略大小写）；重名会报错，需改用 ID。名称解析使用当前缓存账号的目录，必要时先运行 `rbx universe scan` 或 `rbx universe add <UniverseId>`。直接使用两个 Universe ID 不需要本地游戏目录。
+
+`--players` 接受逗号分隔的 Roblox 用户名或 User ID，最多 100 个输入，自动去重。不支持显示名称。所有用户名解析完成后才开始复制；任一用户名不存在会终止，不写入存档。API Key 需要源读取、目标读取和创建/更新权限；用户名查询不会携带 Key。
+
+每位玩家依次执行本地备份、条件覆盖或创建、回读校验；已有目标存档会被覆盖，无额外确认。单个玩家失败后继续处理其他玩家，最终逐人输出结果，成功项包含备份路径；写入阶段失败的信息保留备份路径与写入不确定性提示，重试前应检查目标。该批量操作不是事务，不会自动回滚已完成的玩家。
+
+退出码：全部成功为 0，部分成功为 3，全部复制失败为 1，取消为 130；复制前的参数/认证等错误遵循原有错误契约。JSON 输出的 `data.results` 包含每位已处理玩家的结果，`succeeded`、`failed`、`skipped` 汇总数量；出现逐人失败时报告状态为 `partial`（全部失败同样保留完整批量报告）。
+
+此预设原样复制整条记录及其 attributes/userIds，不清除或改写 ProfileService 会话锁、元数据，也不协调正在运行的游戏服务器。应在相关玩家存档已释放且不会继续保存时复制。不同存储命名仍使用通用 `rbx datastore copy`。

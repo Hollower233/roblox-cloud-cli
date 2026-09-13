@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { AppError } from '../core/errors.js';
 
-const hosts = new Set(['apis.roblox.com', 'games.roblox.com', 'groups.roblox.com']);
+const hosts = new Set(['apis.roblox.com', 'games.roblox.com', 'groups.roblox.com', 'users.roblox.com']);
 export interface HttpOptions {
   apiKey?: string; fetch?: typeof fetch; intervalMs?: number; timeoutMs?: number;
   retries?: number; signal?: AbortSignal; sleep?: (ms: number) => Promise<void>;

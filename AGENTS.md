@@ -28,3 +28,9 @@
 - 清理模块：`src/cache/assets.ts`；SDK 导出：`src/index.ts`。
 - 命令入口：`src/cli/main.ts`；离线验证：`tests/asset-cache.test.ts`。
 - 缓存位置：`%LOCALAPPDATA%/Roblox/rbx-storage*` 与 `%TEMP%/Roblox/` 下的 `sounds`、`http`、`http-wob`。
+
+## ProfileService 玩家存档
+
+- 预设、宇宙与玩家解析、批量复制模块：`src/profiles/copy.ts`。
+- 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
+- 离线验证：`tests/profiles.test.ts`；备份：应用数据目录下的 `datastore-backups/`。

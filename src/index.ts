@@ -11,3 +11,5 @@ export { CredentialStore } from './auth/credentials.js';
 export { AppError } from './core/errors.js';
 export { DataStoreEntries } from './datastores/entries.js';
 export type { EntryAddress, EntrySnapshot } from './datastores/entries.js';
+export { copyProfiles, resolveProfilePlayers, resolveProfileUniverse, profileServicePreset } from './profiles/copy.js';
+export type { ProfilePlayer } from './profiles/copy.js';

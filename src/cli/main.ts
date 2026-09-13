@@ -5,6 +5,7 @@ import { clearAssetCache } from '../cache/assets.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DataStoreEntries } from '../datastores/entries.js';
+import { copyProfiles, resolveProfilePlayers, resolveProfileUniverse } from '../profiles/copy.js';
 import { CredentialStore, validateKey } from '../auth/credentials.js';
 import { AppError, errorInfo, exitCode, id } from '../core/errors.js';
 import { HttpClient } from '../transport/http-client.js';
@@ -114,6 +115,31 @@ datastore.command('copy <sourceUniverseId> <targetUniverseId> <datastore> <key>'
     const address = { datastore: name, key, scope: options.scope };
     const result = await entries.copy({ ...address, universeId: sourceUniverseId }, { ...address, universeId: targetUniverseId }, resolve(local.home, 'datastore-backups'));
     emit(result, json(), `Copied and verified ${result.bytes} bytes. Backup: ${result.backupPath}`);
+  });
+
+program.command('profile').description('Player profile presets')
+  .command('copy <sourceUniverse> <targetUniverse>')
+  .description('Copy player profiles with local backups; replaces existing targets and verifies each copy')
+  .requiredOption('--players <usernames-or-ids>', 'Comma-separated Roblox usernames or User IDs')
+  .option('--preset <preset>', 'Storage preset: profileservice (Default / PLAYER_{uid} / global)', 'profileservice')
+  .action(async (source: string, target: string, options) => {
+    if (options.preset !== 'profileservice') throw new AppError('ARGUMENT_ERROR', 'Supported preset: profileservice.');
+    const local = store();
+    const needsCatalog = !/^\d+$/.test(source.trim()) || !/^\d+$/.test(target.trim());
+    const config = needsCatalog ? await local.config() : undefined;
+    const catalog = config?.currentUserId ? await local.catalog(config.currentUserId) : null;
+    const sourceId = resolveProfileUniverse(source, catalog?.games), targetId = resolveProfileUniverse(target, catalog?.games);
+    if (sourceId === targetId) throw new AppError('ARGUMENT_ERROR', 'Source and target universes must differ.');
+    const http = new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal: abort.signal });
+    const players = await resolveProfilePlayers(options.players, http);
+    const result = await copyProfiles(new DataStoreEntries(http), sourceId, targetId, players, resolve(local.home, 'datastore-backups'), abort.signal);
+    const warnings = result.results.filter(item => item.status === 'error').map(item => ({ code: 'PROFILE_COPY_FAILED', resource: item.userId, message: item.error!.message }));
+    const human = result.results.map(item => item.status === 'success'
+      ? `${clean(item.name)} (${item.userId}): copied and verified ${item.result!.bytes} bytes. Backup: ${item.result!.backupPath}`
+      : `${clean(item.name)} (${item.userId}): FAILED [${item.error!.code}] ${clean(item.error!.message)}`).join('\n');
+    emit(result, json(), `${human}\nSucceeded: ${result.succeeded}; failed: ${result.failed}; skipped: ${result.skipped}`, warnings);
+    if (abort.signal.aborted || result.results.some(item => item.status === 'error' && item.error.code === 'CANCELLED')) process.exitCode = 130;
+    else if (result.failed && !result.succeeded) process.exitCode = 1;
   });
 
 program.command('cache').description('Manage local Roblox asset caches')
