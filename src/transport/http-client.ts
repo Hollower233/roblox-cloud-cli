@@ -25,12 +25,16 @@ export class HttpClient {
     this.queues.set(host, task);
     await task;
   }
-  async request<T>(url: string, options: { auth?: boolean; body?: unknown; rawBody?: string; headers?: Record<string, string>; rawResponse?: boolean } = {}): Promise<T> {
+  async request<T>(url: string, options: { auth?: boolean; method?: 'GET' | 'POST' | 'PATCH'; body?: unknown; rawBody?: string; form?: FormData; headers?: Record<string, string>; rawResponse?: boolean } = {}): Promise<T> {
     const target = new URL(url);
     if (target.protocol !== 'https:' || !hosts.has(target.host) || target.username || target.password) throw new AppError('ARGUMENT_ERROR', 'Unsupported Roblox API destination.');
     if (options.auth && target.host !== 'apis.roblox.com') throw new AppError('ARGUMENT_ERROR', 'API keys may only be sent to apis.roblox.com.');
     if (options.auth && !this.options.apiKey) throw new AppError('AUTH_REQUIRED', 'Configure an API key first.');
-    const retryable = options.body === undefined && options.rawBody === undefined;
+    const hasBody = options.body !== undefined || options.rawBody !== undefined || options.form !== undefined;
+    const method = options.method ?? (hasBody ? 'POST' : 'GET');
+    if (method === 'GET' && hasBody) throw new AppError('ARGUMENT_ERROR', 'GET requests cannot carry a body.');
+    // Only idempotent GETs are retried; writes may already have taken effect.
+    const retryable = method === 'GET';
     for (const name of Object.keys(options.headers ?? {})) {
       if (!['content-md5', 'roblox-entry-attributes', 'roblox-entry-userids'].includes(name)) throw new AppError('ARGUMENT_ERROR', 'Unsupported request header.');
     }
@@ -41,9 +45,9 @@ export class HttpClient {
         const timeout = AbortSignal.timeout(this.options.timeoutMs ?? 25_000);
         const signal = this.options.signal ? AbortSignal.any([timeout, this.options.signal]) : timeout;
         const response = await this.fetcher(target, {
-          method: retryable ? 'GET' : 'POST',
-          headers: { Accept: 'application/json', ...options.headers, ...(options.auth ? { 'x-api-key': this.options.apiKey! } : {}), ...(retryable ? {} : { 'Content-Type': 'application/json' }) },
-          body: options.rawBody ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
+          method,
+          headers: { Accept: 'application/json', ...options.headers, ...(options.auth ? { 'x-api-key': this.options.apiKey! } : {}), ...(hasBody && !options.form ? { 'Content-Type': 'application/json' } : {}) },
+          body: options.form ?? options.rawBody ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
           redirect: 'error', signal,
         });
         if (!response.ok) {

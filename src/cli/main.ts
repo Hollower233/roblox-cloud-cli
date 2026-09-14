@@ -12,7 +12,9 @@ import { HttpClient } from '../transport/http-client.js';
 import { RobloxApi } from '../roblox/api.js';
 import { LocalStore, defaultHome } from '../storage/store.js';
 import { CatalogService, selectGames } from '../universes/catalog.js';
-import { emit, renderCatalog, clean } from './output.js';
+import { emit, renderCatalog, renderIconPlan, localTime, remaining, clean } from './output.js';
+import { IconAssets, IconCountdown, type CountdownEvent, type CountdownOptions } from '../icons/countdown.js';
+import { parseTargetTime, requireDuration } from '../icons/frames.js';
 import type { Catalog, Warning } from '../universes/models.js';
 
 const abort = new AbortController();
@@ -148,6 +150,66 @@ program.command('cache').description('Manage local Roblox asset caches')
     const result = await clearAssetCache();
     process.stdout.write(JSON.stringify({ schemaVersion: 1, ...result }) + '\n');
     process.exitCode = result.status === 'success' ? 0 : result.status === 'partial' ? 3 : 1;
+  });
+
+program.command('icon').description('Game icon tools')
+  .command('countdown <universeId> <folder>')
+  .description('Pre-upload countdown icons, wait for moderation, then switch the root place icon on schedule')
+  .option('--at <time>', 'Target time: "YYYY-MM-DD HH:MM[:SS]" local time, or ISO-8601 with timezone')
+  .option('--in <duration>', 'Target this long after all icons pass moderation, e.g. 3h or 1h30m')
+  .option('--moderation-timeout <duration>', 'Maximum wait for moderation', '30m')
+  .option('--no-cache', 'Upload again instead of reusing cached image asset IDs')
+  .option('--reset', 'With --in: discard the unfinished countdown for this folder and start over')
+  .option('--restore-after <duration>', 'Switch back to the original icon this long after now, e.g. 1h')
+  .option('--dry-run', 'Show the plan from local files only; no API calls or writes')
+  .action(async (universeId: string, folder: string, options) => {
+    id(universeId);
+    if (Boolean(options.at) === Boolean(options.in)) throw new AppError('ARGUMENT_ERROR', 'Specify exactly one of --at or --in.');
+    if (options.reset && !options.in) throw new AppError('ARGUMENT_ERROR', '--reset only applies to --in.');
+    const local = store(), config = await local.config();
+    const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;
+    const game = catalog?.games.find(item => item.universeId === universeId);
+    if (!game) throw new AppError('ARGUMENT_ERROR', `Universe ${universeId} is not in the local catalog; run rbx universe add ${universeId} first.`);
+    const countdownOptions: CountdownOptions = {
+      universeId, folder: resolve(folder), creator: { type: game.owner.type, id: game.owner.id },
+      target: options.at ? { at: parseTargetTime(options.at) } : { inMs: requireDuration(options.in, '--in') },
+      moderationTimeoutMs: requireDuration(options.moderationTimeout, '--moderation-timeout'), noCache: options.cache === false, reset: Boolean(options.reset),
+      ...(options.restoreAfter ? { restoreAfterMs: requireDuration(options.restoreAfter, '--restore-after') } : {}),
+    };
+    if (options.dryRun) {
+      const preview = await new IconCountdown(local, null).preview(countdownOptions);
+      emit(preview, json(), preview.alreadyCompleted ? `该倒计时已完成（目标时刻 ${localTime(preview.target)}）。` : `${preview.resumed ? '续跑已有倒计时。\n' : ''}${renderIconPlan(preview.target, preview.nodes, preview.skipped, preview.restoreAt)}\n[dry-run] 未调用 API，也未写入文件。`, preview.warnings);
+      return;
+    }
+    const apiKey = await new CredentialStore(local.home).get(), identity = await api(apiKey).identity();
+    const scope = identity.scopes.find(item => item.name === 'asset');
+    if (!scope || !['read', 'write'].every(operation => scope.operations.includes(operation))) throw new AppError('FORBIDDEN', 'The API key needs the asset:read and asset:write scopes.');
+    // --json streams one JSON event per line (NDJSON) because the command runs until the target time.
+    let ticking = false, reviewing = '';
+    const say = (text: string) => { if (ticking) { process.stderr.write('\n'); ticking = false; } process.stderr.write(text + '\n'); };
+    const onEvent = (event: CountdownEvent) => {
+      if (json()) { process.stdout.write(JSON.stringify({ schemaVersion: 1, ...event }) + '\n'); return; }
+      if (event.event === 'scanned') {
+        say(`找到 ${event.frames.length} 张图标：${event.frames.map(frame => clean(frame.label)).join(', ')}`);
+        for (const w of event.warnings) say(`Warning [${clean(w.code)}] ${clean(w.resource ?? '')} ${clean(w.message)}`);
+      } else if (event.event === 'asset') say(`${clean(event.file)} → 素材 ${event.assetId}（${event.source === 'cache' ? '缓存' : '已上传'}，审核：${event.moderationState}）`);
+      else if (event.event === 'moderation') { const names = event.reviewing.map(clean).join(', '); if (names !== reviewing) say(`等待审核：${names}`); reviewing = names; }
+      else if (event.event === 'planned') say(`${event.resumed ? '续跑已有倒计时。' : '全部审核通过，开始倒计时。'}原图标素材：${event.originalIconAssetId ?? '无'}\n${renderIconPlan(event.target, event.nodes, event.skipped, event.restoreAt)}`);
+      else if (event.event === 'missed') say(`已错过：${event.labels.map(clean).join(', ')}`);
+      else if (event.event === 'restore-waiting') say(`等待恢复原图标（素材 ${event.assetId}），时间 ${localTime(event.at)}`);
+      else if (event.event === 'restored') say(`[${localTime(event.at)}] 已恢复原图标（素材 ${event.assetId}）`);
+      else if (event.event === 'restore-skipped') say(`[${localTime(event.at)}] 图标已被他人修改（当前素材 ${event.currentIconAssetId ?? '无'}），跳过恢复`);
+      else if (event.event === 'icon') say(`[${localTime(event.at)}] 图标已切换为 ${clean(event.file)}（素材 ${event.assetId}）`);
+    };
+    const onTick = !json() && process.stderr.isTTY
+      ? (next: { file: string }, left: number) => { process.stderr.write(`\r下一个：${clean(next.file)}  剩余 ${remaining(left)}   `); ticking = true; }
+      : undefined;
+    const http = new HttpClient({ apiKey, signal: abort.signal });
+    const result = await new IconCountdown(local, new IconAssets(http, undefined, abort.signal), { signal: abort.signal, onEvent, onTick }).run(countdownOptions);
+    if (!json()) {
+      if (ticking) process.stderr.write('\n');
+      process.stdout.write(result.alreadyCompleted ? `该倒计时已完成（目标时刻 ${localTime(result.target)}）。\n` : `倒计时完成，目标时刻 ${localTime(result.target)}。原图标素材：${result.originalIconAssetId ?? '无'}${result.restore === 'restored' ? '（已恢复）' : result.restore === 'skipped' ? '（图标被他人修改，未恢复）' : ''}\n`);
+    }
   });
 
 try { await program.parseAsync(process.argv); }

@@ -34,3 +34,10 @@
 - 预设、宇宙与玩家解析、批量复制模块：`src/profiles/copy.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/profiles.test.ts`；备份：应用数据目录下的 `datastore-backups/`。
+
+## 游戏图标倒计时
+
+- 文件夹解析、图片校验与节点计划：`src/icons/frames.ts`；上传审核、换图与续跑：`src/icons/countdown.ts`。
+- 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
+- 离线验证：`tests/icons.test.ts`。
+- 本地数据：应用数据目录下的 `icon-countdown/`（`assets.json` 素材缓存、`runs/` 进度、`anchors/` 相对时长锚点、`locks/` 运行锁）。

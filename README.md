@@ -119,7 +119,7 @@ const catalog = await new CatalogService(api).scan(identity, null);
 
 SDK 的业务层依赖 `RobloxGateway` 接口，可以注入 fake API 做离线测试。它不依赖 CLI，也不会自行保存目录。`LocalStore` 和 `CredentialStore` 为可独立使用的适配器。
 
-HTTP 默认按 host 串行安排请求起始时间，间隔 700ms；幂等 GET 在 429/部分 5xx 或网络异常时有限重试。支持 Retry-After；超过 30 秒的服务器冷却时间交由调用方稍后重试。POST 不自动重试。禁止 HTTP 重定向携带凭证，只有指定的 apis.roblox.com 请求会附带 Key。
+HTTP 默认按 host 串行安排请求起始时间，间隔 700ms；幂等 GET 在 429/部分 5xx 或网络异常时有限重试。支持 Retry-After；超过 30 秒的服务器冷却时间交由调用方稍后重试。POST、PATCH（含 multipart 上传）不自动重试。禁止 HTTP 重定向携带凭证，只有指定的 apis.roblox.com 请求会附带 Key。
 
 ## 开发与验证
 
@@ -199,3 +199,54 @@ rbx profile copy 123456789 987654321 --players "12345,67890" --preset profileser
 退出码：全部成功为 0，部分成功为 3，全部复制失败为 1，取消为 130；复制前的参数/认证等错误遵循原有错误契约。JSON 输出的 `data.results` 包含每位已处理玩家的结果，`succeeded`、`failed`、`skipped` 汇总数量；出现逐人失败时报告状态为 `partial`（全部失败同样保留完整批量报告）。
 
 此预设原样复制整条记录及其 attributes/userIds，不清除或改写 ProfileService 会话锁、元数据，也不协调正在运行的游戏服务器。应在相关玩家存档已释放且不会继续保存时复制。不同存储命名仍使用通用 `rbx datastore copy`。
+
+## 游戏图标倒计时
+
+在更新上线前按时间节点自动切换游戏图标（根 Place 的 Icon）。所有图片先上传并全部通过审核，才开始倒计时，到点只切换素材引用，不再等待上传。
+
+```sh
+rbx icon countdown 123456789 "D:/倒计时素材" --at "2026-09-14 23:00"
+rbx icon countdown 123456789 "D:/倒计时素材" --in 3h
+rbx icon countdown 123456789 "D:/倒计时素材" --in 3h --dry-run
+rbx icon countdown 123456789 "D:/倒计时素材" --at "2026-09-14 23:00" --restore-after 1h
+```
+
+- `--at`：目标时刻，本机时区的 `YYYY-MM-DD HH:MM[:SS]`，或带时区的 ISO-8601。
+- `--in`：相对时长，从**所有图片审核通过的那一刻**开始计时。二者必须选一个。
+- `--dry-run`：只读本地文件夹和本地进度，打印计划，不调用 API、不写文件。
+- `--moderation-timeout <时长>`：审核最长等待时间，默认 `30m`。
+- `--no-cache`：不复用已上传的素材，重新上传。
+- `--reset`：仅用于 `--in`，丢弃该文件夹未完成的倒计时，从头开始。
+- `--restore-after <时长>`：`now` 之后再过这么久，自动换回倒计时开始前的原图标。
+
+Universe 必须已在本地游戏目录中（`rbx universe scan` 或 `rbx universe add`），素材以游戏 Owner（个人或群组）身份上传。API Key 需要 `asset:read` 与 `asset:write`。
+
+**文件夹规则**：文件名（去掉扩展名）即节点，支持 `.png/.jpg/.jpeg`，其他扩展名的文件忽略。时长写法如 `3h`、`24hrs`、`1hr`、`30mins`、`1min`、`1h30m`、`45s`、`1d`，目标时刻的图为 `now`（或 `0`）。文件名无法解析、两个文件时长相同、不是真实 PNG/JPEG、非正方形、超过 20 MB 都会在上传前一次性报错；小于 512×512 只警告。
+
+**节点规则**：R 为计划确定时（审核通过时）距离目标的剩余时间。
+
+- 必须有 `now`，并且至少还有一张时长 ≤ R 的图，否则报错。
+- 时长 > R 的图跳过，也不会上传。
+- 每张图严格在「目标 − 时长」时切换；第一个节点之前保持原图标，节点之间允许有空档。
+- 默认切换到 `now` 后结束，不恢复原图标；原图标素材 ID 会在输出与进度文件中给出。
+- 使用 `--restore-after` 时，原图标在上传前读取；该 Place 没有自定义图标会直接报错。Roblox 的图标读取接口是最终一致的，改图后几分钟内仍可能偶尔读到旧值，因此读取图标时需连续 3 次结果一致才采用；读到的原图标若是本次倒计时的某张图，会拒绝开始。到恢复时间时，当前图标是原图或本次倒计时的任意一张就发送换回请求，否则视为被人手动改过并跳过恢复。续跑必须使用相同的 `--restore-after`。
+
+**审核**：任意一张被拒或等待超时，整个任务失败，不切换任何图标。素材按「文件内容 SHA-256 + Owner」缓存，再次运行只重新查询审核状态；被拒记录同样缓存。
+
+**中断与续跑**：命令在前台常驻，逐秒显示剩余时间，Ctrl+C 安全退出。切换失败会直接报错退出。用同样的参数重新运行即可续跑：已完成的节点跳过，素材走缓存；错过多个节点时只补最近的一个，更早的丢弃；目标时刻已过但 `now` 未执行时会补执行 `now`。`--in` 会记住第一次算出的目标时刻，完成后自动失效。同一 Universe 同时只能运行一个倒计时，崩溃遗留的锁在原进程结束后自动接管。
+
+**输出**：`--json` 时 stdout 每行一个事件（NDJSON）：`scanned`、`asset`、`moderation`、`planned`、`waiting`、`missed`、`icon`、`restore-waiting`、`restored`、`restore-skipped`、`completed`，出错时最后一行为标准错误对象。`--dry-run --json` 仍输出单个 JSON 对象。审核被拒、审核超时的错误码分别为 `MODERATION_REJECTED`、`MODERATION_TIMEOUT`，退出码 1。
+
+真实冒烟测试默认不会改图标。需要显式设置 `RBX_LIVE_ICON_UNIVERSE`（Universe ID）与 `RBX_LIVE_ICON_DIR`（至少含 `1min.png` 和 `now.png`）后运行 `npm run test:live`，它会真实切换该游戏图标，`RBX_LIVE_ICON_IN` 可调整时长（默认 `1m`）。
+
+**本地文件**：应用数据目录下的 `icon-countdown/`。
+
+- `assets.json`：素材缓存。
+- `runs/`：每次倒计时的进度与原图标。
+- `anchors/`：`--in` 目标时刻锚点。
+- `locks/`：运行锁。
+
+**模块位置**
+
+- 文件夹解析与计划：`src/icons/frames.ts`；上传审核与续跑：`src/icons/countdown.ts`。
+- 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`；离线测试：`tests/icons.test.ts`。
