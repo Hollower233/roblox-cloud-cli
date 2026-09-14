@@ -41,3 +41,9 @@
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/icons.test.ts`。
 - 本地数据：应用数据目录下的 `icon-countdown/`（`assets.json` 素材缓存、`runs/` 进度、`anchors/` 相对时长锚点、`locks/` 运行锁）。
+
+## 素材原图下载
+
+- 下载与 Decal 纹理引用解析模块：`src/assets/download.ts`。
+- 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
+- 离线验证：`tests/asset-download.test.ts`；图片保存在用户指定路径或当前目录。

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from 'commander';
 import password from '@inquirer/password';
+import { downloadAssetImage, parseAssetId } from '../assets/download.js';
 import { clearAssetCache } from '../cache/assets.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -29,6 +30,16 @@ function json(): boolean { return Boolean(program.opts().json); }
 function api(key: string): RobloxApi { return new RobloxApi(new HttpClient({ apiKey: key, signal: abort.signal }), key); }
 function service(client: RobloxApi): CatalogService { return new CatalogService(client, { signal: abort.signal, progress: message => { process.stderr.write(clean(message) + '\n'); } }); }
 function envWarning(): Warning[] { return process.env.ROBLOX_API_KEY !== undefined ? [{ code: 'ENV_KEY_OVERRIDES_STORED_KEY', message: 'ROBLOX_API_KEY takes precedence over the saved credential.' }] : []; }
+
+program.command('asset').description('Download original Roblox images')
+  .command('download <assetId>').description('Download delivered PNG/JPEG bytes, resolving XML Decal textures')
+  .option('-o, --output <path>', 'Output file path (default: <assetId>.<detected extension>); never overwrites')
+  .action(async (input: string, options) => {
+    const assetId = parseAssetId(input);
+    const key = await new CredentialStore(store().home).get();
+    const result = await downloadAssetImage(new HttpClient({ apiKey: key, signal: abort.signal }), assetId, { output: options.output, signal: abort.signal });
+    emit(result, json(), `Saved original image: ${result.path}\n${result.width}x${result.height} ${result.format}, ${result.bytes} bytes\nSHA-256: ${result.sha256}`);
+  });
 
 const auth = program.command('auth').description('Configure and validate API credentials');
 auth.command('set').description('Validate and securely save a key (Windows DPAPI)')

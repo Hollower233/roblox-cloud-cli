@@ -1,4 +1,6 @@
 export { HttpClient } from './transport/http-client.js';
+export { downloadAssetImage, parseAssetId } from './assets/download.js';
+export type { AssetDownloadOptions } from './assets/download.js';
 export { clearAssetCache } from './cache/assets.js';
 export type { AssetCacheOptions, AssetCacheResult, CacheProcess, CacheTargetResult } from './cache/assets.js';
 export type { HttpOptions } from './transport/http-client.js';
