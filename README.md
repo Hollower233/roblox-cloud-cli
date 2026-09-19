@@ -200,6 +200,31 @@ rbx profile copy 123456789 987654321 --players "12345,67890" --preset profileser
 
 此预设原样复制整条记录及其 attributes/userIds，不清除或改写 ProfileService 会话锁、元数据，也不协调正在运行的游戏服务器。应在相关玩家存档已释放且不会继续保存时复制。不同存储命名仍使用通用 `rbx datastore copy`。
 
+## 玩家清档
+
+按游戏名（本地目录中的完整名称）或 Universe ID，删除指定账号的玩家存档：
+
+```powershell
+# 只读预览：调用 API 检查存档，不删除、不创建备份
+node --import tsx src/cli/main.ts profile clear "Example Development" --players "ExamplePlayerOne,ExamplePlayerTwo" --dry-run
+
+# 正式清档：先备份，再删除并回读校验
+node --import tsx src/cli/main.ts profile clear 987654321 --players "12345,67890"
+
+# 机器可读结果
+node --import tsx src/cli/main.ts --json profile clear 987654321 --players "12345,67890"
+```
+
+支持 `--preset profileservice`（默认）：仅处理 `Default` / `global` / `PLAYER_{uid}`，不清空整个 DataStore，不涉及其他游戏、排行榜或其他 Key。账号可以混用用户名和 User ID，解析后去重。API Key 需要目标游戏的 `universe-datastores.objects:read` 和 `universe-datastores.objects:delete` 权限。
+
+**先让相关玩家离线并确保服务器已释放存档，执行期间不要重新进入。** 命令发现 `MetaData.ActiveSession` 或 `MetaData.ForceLoadSession` 时拒绝清档，不提供强制绕过。删除后，下次进入通常由游戏自己的初始化逻辑创建新档。
+
+每条已有存档都先备份完整原始 JSON、版本、attributes 和 userIds 到应用数据目录的 `datastore-backups/`；备份失败不删除。删除前再次检查版本及内容，发生变化则拒绝删除。Roblox DELETE 接口不支持 `matchVersion`，这次检查不能消除检查与删除之间的并发窗口，不能替代玩家离线。删除请求不自动重试，之后回读确认不存在；失败会保留备份，并提示删除可能已经发生。备份仅保存在本机，当前未提供自动恢复命令。
+
+结果 `cleared` 表示已删除并校验不存在，`missing` 表示原本无存档（不创建备份），`would-clear` 表示预览发现可清理存档。单个账号失败不会阻止其他账号；JSON 包含逐账号结果、备份路径和成功/失败/跳过数量。全部失败退出码为 1，部分失败为 3，取消为 130。
+
+模块：`src/profiles/clear.ts`、`src/datastores/entries.ts`；离线验证：`tests/profile-clear.test.ts`、`tests/storage-cli.test.ts`。
+
 ## 游戏图标倒计时
 
 在更新上线前按时间节点自动切换游戏图标（根 Place 的 Icon）。所有图片先上传并全部通过审核，才开始倒计时，到点只切换素材引用，不再等待上传。

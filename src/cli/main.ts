@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DataStoreEntries } from '../datastores/entries.js';
 import { copyProfiles, resolveProfilePlayers, resolveProfileUniverse } from '../profiles/copy.js';
+import { clearProfiles } from '../profiles/clear.js';
 import { CredentialStore, validateKey } from '../auth/credentials.js';
 import { AppError, errorInfo, exitCode, id } from '../core/errors.js';
 import { HttpClient } from '../transport/http-client.js';
@@ -130,8 +131,8 @@ datastore.command('copy <sourceUniverseId> <targetUniverseId> <datastore> <key>'
     emit(result, json(), `Copied and verified ${result.bytes} bytes. Backup: ${result.backupPath}`);
   });
 
-program.command('profile').description('Player profile presets')
-  .command('copy <sourceUniverse> <targetUniverse>')
+const profile = program.command('profile').description('Player profile presets');
+profile.command('copy <sourceUniverse> <targetUniverse>')
   .description('Copy player profiles with local backups; replaces existing targets and verifies each copy')
   .requiredOption('--players <usernames-or-ids>', 'Comma-separated Roblox usernames or User IDs')
   .option('--preset <preset>', 'Storage preset: profileservice (Default / PLAYER_{uid} / global)', 'profileservice')
@@ -152,6 +153,29 @@ program.command('profile').description('Player profile presets')
       : `${clean(item.name)} (${item.userId}): FAILED [${item.error!.code}] ${clean(item.error!.message)}`).join('\n');
     emit(result, json(), `${human}\nSucceeded: ${result.succeeded}; failed: ${result.failed}; skipped: ${result.skipped}`, warnings);
     if (abort.signal.aborted || result.results.some(item => item.status === 'error' && item.error.code === 'CANCELLED')) process.exitCode = 130;
+    else if (result.failed && !result.succeeded) process.exitCode = 1;
+  });
+
+profile.command('clear <universe>')
+  .description('Delete selected player profiles after backup and verify absence; players must be offline')
+  .requiredOption('--players <usernames-or-ids>', 'Comma-separated Roblox usernames or User IDs')
+  .option('--preset <preset>', 'Storage preset: profileservice (Default / PLAYER_{uid} / global)', 'profileservice')
+  .option('--dry-run', 'Read and validate profiles without deleting or creating backups')
+  .action(async (universe: string, options) => {
+    if (options.preset !== 'profileservice') throw new AppError('ARGUMENT_ERROR', 'Supported preset: profileservice.');
+    const local = store();
+    const config = /^\d+$/.test(universe.trim()) ? undefined : await local.config();
+    const catalog = config?.currentUserId ? await local.catalog(config.currentUserId) : null;
+    const universeId = resolveProfileUniverse(universe, catalog?.games);
+    const http = new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal: abort.signal });
+    const players = await resolveProfilePlayers(options.players, http);
+    const result = await clearProfiles(new DataStoreEntries(http), universeId, players, resolve(local.home, 'datastore-backups'), { dryRun: options.dryRun, signal: abort.signal });
+    const warnings = result.results.filter(row => row.status === 'error').map(row => ({ code: 'PROFILE_CLEAR_FAILED', resource: row.userId, message: row.error.message }));
+    const human = result.results.map(row => row.status === 'error'
+      ? `${clean(row.name)} (${row.userId}): FAILED [${row.error.code}] ${clean(row.error.message)}`
+      : `${clean(row.name)} (${row.userId}): ${row.result.outcome}${row.result.backupPath ? `; verified absent. Backup: ${row.result.backupPath}` : ''}`).join('\n');
+    emit(result, json(), `Universe: ${universeId}${result.dryRun ? ' [dry-run]' : ''}\n${human}\nSucceeded: ${result.succeeded}; failed: ${result.failed}; skipped: ${result.skipped}`, warnings);
+    if (abort.signal.aborted || result.results.some(row => row.status === 'error' && row.error.code === 'CANCELLED')) process.exitCode = 130;
     else if (result.failed && !result.succeeded) process.exitCode = 1;
   });
 

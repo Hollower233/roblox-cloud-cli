@@ -47,3 +47,9 @@
 - 下载与 Decal 纹理引用解析模块：`src/assets/download.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/asset-download.test.ts`；图片保存在用户指定路径或当前目录。
+
+## 玩家清档
+
+- 批量清档模块：`src/profiles/clear.ts`；底层存档读写：`src/datastores/entries.ts`。
+- 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
+- 离线验证：`tests/profile-clear.test.ts`、`tests/storage-cli.test.ts`；备份：应用数据目录下的 `datastore-backups/`。

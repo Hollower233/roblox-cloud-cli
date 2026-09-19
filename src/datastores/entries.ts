@@ -6,6 +6,7 @@ import { HttpClient } from '../transport/http-client.js';
 
 export interface EntryAddress { universeId: string; datastore: string; key: string; scope: string }
 export interface EntrySnapshot { raw: string; version: string; attributes: string; userIds: string }
+export interface ClearEntryOptions { dryRun?: boolean; requireReleasedProfile?: boolean }
 interface RawResponse { status: number; text: string; headers: Record<string, string> }
 export class DataStoreEntries {
   constructor(private http: HttpClient) {}
@@ -24,6 +25,37 @@ export class DataStoreEntries {
     const version = response.headers['roblox-entry-version'];
     if (!version) throw new AppError('INVALID_RESPONSE', 'DataStore response is missing its version.');
     return { raw: response.text, version, attributes: response.headers['roblox-entry-attributes'] ?? '{}', userIds: response.headers['roblox-entry-userids'] ?? '[]' };
+  }
+  async clear(target: EntryAddress, backupDirectory: string, options: ClearEntryOptions = {}) {
+    const previous = await this.get(target);
+    const receipt = { target, previousVersion: previous?.version ?? null, bytes: previous ? Buffer.byteLength(previous.raw) : 0 };
+    if (!previous) return { ...receipt, outcome: 'missing' as const, verified: true, backupPath: null };
+    if (options.requireReleasedProfile) {
+      const profile = JSON.parse(previous.raw);
+      if (profile?.MetaData?.ActiveSession != null || profile?.MetaData?.ForceLoadSession != null) {
+        throw new AppError('ARGUMENT_ERROR', 'Profile has an active or force-load session. Release the player profile before clearing.');
+      }
+    }
+    if (options.dryRun) return { ...receipt, outcome: 'would-clear' as const, verified: false, backupPath: null };
+    const backupPath = join(backupDirectory, `${Date.now()}-${randomUUID()}.json`);
+    try {
+      await mkdir(backupDirectory, { recursive: true, mode: 0o700 });
+      await writeFile(backupPath, JSON.stringify({ schemaVersion: 1, operation: 'clear', createdAt: new Date().toISOString(), target, targetSnapshot: previous }, null, 2), { flag: 'wx', mode: 0o600 });
+    } catch { throw new AppError('STORAGE_ERROR', 'Cannot save DataStore backup; no delete attempted.'); }
+    // DELETE has no matchVersion parameter. Recheck before deleting, but callers must prevent concurrent saves.
+    const current = await this.get(target);
+    if (!current || current.version !== previous.version || current.raw !== previous.raw
+      || current.attributes !== previous.attributes || current.userIds !== previous.userIds) {
+      throw new AppError('ARGUMENT_ERROR', `Entry changed after backup; no delete attempted. Backup: ${backupPath}.`);
+    }
+    try {
+      await this.http.request(this.url(target).toString(), { auth: true, method: 'DELETE', rawResponse: true });
+      if (await this.get(target)) throw new AppError('INVALID_RESPONSE', 'Target still exists after deletion; it may have been recreated by a game server.');
+      return { ...receipt, outcome: 'cleared' as const, verified: true, backupPath };
+    } catch (error) {
+      const failure = error instanceof AppError ? error : new AppError('NETWORK_ERROR', 'Deletion failed.');
+      throw new AppError(failure.code, `${failure.message} Backup: ${backupPath}. A delete may have occurred; inspect target before retrying.`, failure.httpStatus);
+    }
   }
   async copy(source: EntryAddress, target: EntryAddress, backupDirectory: string) {
     this.url(source); this.url(target);

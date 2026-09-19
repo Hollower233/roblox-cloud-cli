@@ -15,6 +15,8 @@ export { DataStoreEntries } from './datastores/entries.js';
 export type { EntryAddress, EntrySnapshot } from './datastores/entries.js';
 export { copyProfiles, resolveProfilePlayers, resolveProfileUniverse, profileServicePreset } from './profiles/copy.js';
 export type { ProfilePlayer } from './profiles/copy.js';
+export { clearProfiles } from './profiles/clear.js';
+export type { ClearEntryOptions } from './datastores/entries.js';
 export { IconAssets, IconCountdown, systemClock } from './icons/countdown.js';
 export type { CountdownClock, CountdownEvent, CountdownNodeView, CountdownOptions, CountdownPreview, CountdownResult, CountdownRuntime, IconCreator, ModerationState } from './icons/countdown.js';
 export { imageInfo, parseDuration, parseTargetTime, planCountdown, scanIconFolder, selectPending } from './icons/frames.js';

@@ -58,3 +58,17 @@ test('terminal game names cannot inject ANSI controls', () => {
   const game = savedGame(); game.name = '\u001b[2JBad\nName';
   const output = renderCatalog(savedCatalog([game]), [game]); assert.ok(!output.includes('\u001b')); assert.ok(output.includes('Bad Name'));
 });
+
+test('profile clear CLI validates arguments before authentication and exposes preview', async () => temporary(async home => {
+  const env = { ...process.env }; delete env.ROBLOX_API_KEY;
+  for (const [args, code] of [
+    [['profile', 'clear', '123'], 'ARGUMENT_ERROR'],
+    [['profile', 'clear', '123', '--players', '42', '--preset', 'unknown'], 'ARGUMENT_ERROR'],
+    [['profile', 'clear', '123', '--players', '42', '--dry-run'], 'AUTH_REQUIRED'],
+  ] as const) {
+    const child = spawnSync(process.execPath, [resolve('dist/cli/main.js'), ...args, '--home', home, '--json'], { env, encoding: 'utf8' });
+    assert.equal(JSON.parse(child.stdout).error.code, code, child.stderr);
+  }
+  const help = spawnSync(process.execPath, [resolve('dist/cli/main.js'), 'profile', 'clear', '--help'], { env, encoding: 'utf8' });
+  assert.equal(help.status, 0); assert.match(help.stdout, /--dry-run/); assert.match(help.stdout, /--players/);
+}));
