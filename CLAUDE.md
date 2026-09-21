@@ -3,6 +3,7 @@
 - 本仓库为独立 TypeScript CLI，不修改 Roblox Studio。
 - 项目系统记录在 AGENTS.md 与 CLAUDE.md 中保持一致。
 - Key、Cookie、真实账号扫描结果不得提交。真实 API 测试显式运行，默认测试离线。
+- 将可复用的 Roblox API 操作沉淀为正式 CLI/SDK 能力；实现前先与用户确认目标与边界，避免依赖一次性脚本。
 
 ## 命令与业务模块
 
