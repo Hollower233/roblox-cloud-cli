@@ -53,3 +53,9 @@
 - 批量清档模块：`src/profiles/clear.ts`；底层存档读写：`src/datastores/entries.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/profile-clear.test.ts`、`tests/storage-cli.test.ts`；备份：应用数据目录下的 `datastore-backups/`。
+
+## 玩家存档历史
+
+- 历史版本与 ProfileService 摘要模块：`src/datastores/entries.ts`、`src/profiles/history.ts`。
+- 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
+- 离线验证：`tests/datastores.test.ts`、`tests/profile-history.test.ts`；使用文档：`README.md`。

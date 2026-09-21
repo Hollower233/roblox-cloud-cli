@@ -6,6 +6,8 @@ import { HttpClient } from '../transport/http-client.js';
 
 export interface EntryAddress { universeId: string; datastore: string; key: string; scope: string }
 export interface EntrySnapshot { raw: string; version: string; attributes: string; userIds: string }
+export interface EntryVersion { version: string; deleted: boolean; contentLength: number; createdTime: string; objectCreatedTime: string }
+export interface EntryRevision { version: string; createdTime: string; objectCreatedTime: string; value: unknown; attributes: unknown; users: string[] }
 export interface ClearEntryOptions { dryRun?: boolean; requireReleasedProfile?: boolean }
 interface RawResponse { status: number; text: string; headers: Record<string, string> }
 export class DataStoreEntries {
@@ -25,6 +27,46 @@ export class DataStoreEntries {
     const version = response.headers['roblox-entry-version'];
     if (!version) throw new AppError('INVALID_RESPONSE', 'DataStore response is missing its version.');
     return { raw: response.text, version, attributes: response.headers['roblox-entry-attributes'] ?? '{}', userIds: response.headers['roblox-entry-userids'] ?? '[]' };
+  }
+  async listVersions(address: EntryAddress, limit = 10): Promise<EntryVersion[]> {
+    this.url(address);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new AppError('ARGUMENT_ERROR', 'Version limit must be an integer from 1 to 100.');
+    const versions: EntryVersion[] = [];
+    let cursor: string | undefined;
+    while (versions.length < limit) {
+      const url = new URL(`https://apis.roblox.com/datastores/v1/universes/${id(address.universeId)}/standard-datastores/datastore/entries/entry/versions`);
+      url.search = new URLSearchParams({ datastoreName: address.datastore, entryKey: address.key, scope: address.scope,
+        sortOrder: 'Descending', limit: String(Math.min(10, limit - versions.length)), ...(cursor ? { cursor } : {}) }).toString();
+      const response = await this.http.request<{ versions?: unknown; nextPageCursor?: unknown }>(url.toString(), { auth: true });
+      if (!response || !Array.isArray(response.versions)) throw new AppError('INVALID_RESPONSE', 'Invalid DataStore versions response.');
+      for (const row of response.versions) {
+        if (!row || typeof row !== 'object') throw new AppError('INVALID_RESPONSE', 'Invalid DataStore version.');
+        const value = row as Record<string, unknown>;
+        if (typeof value.version !== 'string' || typeof value.deleted !== 'boolean' || typeof value.contentLength !== 'number'
+          || typeof value.createdTime !== 'string' || typeof value.objectCreatedTime !== 'string') throw new AppError('INVALID_RESPONSE', 'Invalid DataStore version.');
+        versions.push({ version: value.version, deleted: value.deleted, contentLength: value.contentLength,
+          createdTime: value.createdTime, objectCreatedTime: value.objectCreatedTime });
+      }
+      if (typeof response.nextPageCursor !== 'string' || !response.nextPageCursor || response.versions.length === 0) break;
+      cursor = response.nextPageCursor;
+    }
+    return versions.slice(0, limit);
+  }
+  async getVersion(address: EntryAddress, version: string): Promise<EntryRevision | null> {
+    this.url(address);
+    if (!version || version.length > 256 || /[\x00-\x1f\x7f]/.test(version)) throw new AppError('ARGUMENT_ERROR', 'Invalid DataStore version ID.');
+    const segments = [address.datastore, address.scope, `${address.key}@${version}`].map(encodeURIComponent);
+    const url = `https://apis.roblox.com/cloud/v2/universes/${id(address.universeId)}/data-stores/${segments[0]}/scopes/${segments[1]}/entries/${segments[2]}`;
+    let response: unknown;
+    try { response = await this.http.request(url, { auth: true }); }
+    catch (error) { if (error instanceof AppError && error.httpStatus === 404) return null; throw error; }
+    if (!response || typeof response !== 'object') throw new AppError('INVALID_RESPONSE', 'Invalid DataStore revision response.');
+    const value = response as Record<string, unknown>;
+    if (typeof value.revisionId !== 'string' || typeof value.revisionCreateTime !== 'string' || typeof value.createTime !== 'string'
+      || !('value' in value) || !Array.isArray(value.users)) throw new AppError('INVALID_RESPONSE', 'Invalid DataStore revision response.');
+    if (!value.users.every(user => typeof user === 'string')) throw new AppError('INVALID_RESPONSE', 'Invalid DataStore revision users.');
+    return { version: value.revisionId, createdTime: value.revisionCreateTime, objectCreatedTime: value.createTime,
+      value: value.value, attributes: value.attributes ?? {}, users: value.users as string[] };
   }
   async clear(target: EntryAddress, backupDirectory: string, options: ClearEntryOptions = {}) {
     const previous = await this.get(target);

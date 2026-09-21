@@ -200,6 +200,21 @@ rbx profile copy 123456789 987654321 --players "12345,67890" --preset profileser
 
 此预设原样复制整条记录及其 attributes/userIds，不清除或改写 ProfileService 会话锁、元数据，也不协调正在运行的游戏服务器。应在相关玩家存档已释放且不会继续保存时复制。不同存储命名仍使用通用 `rbx datastore copy`。
 
+## 玩家存档历史与合成审计
+
+只读查询一个玩家的 ProfileService 历史版本，并从各版本累计的物品流水中去重汇总合成事件：
+
+```powershell
+rbx profile history "Example Production" --player ExamplePlayer --limit 10
+rbx --json profile history 123456789 --player 12345 --limit 25
+```
+
+游戏支持 Universe ID 或本地目录中的完整名称；玩家支持一个用户名或 User ID。`--limit` 范围为 1–100，默认读取最新 10 个 Roblox 仍保留的版本。命令固定读取 `Default` / `global` / `PLAYER_{uid}`，不会写入、恢复或备份存档。
+
+普通输出逐版本显示时间、货币、经验、物品数和 RPS 战绩，并列出去重后的 `fusion` 流水。JSON 输出保留版本 ID、数据摘要、合成事件 ID、时间、被消耗实例 ID、生成实例 ID及结果物品 ID，便于结合游戏配置表审计具体品质和显示名称。
+
+API Key 需要 `universe-datastores.versions:list` 和 `universe-datastores.versions:read` 权限。历史版本由 Roblox 保留策略决定；未出现在接口结果中的旧版本无法由本命令恢复。模块：`src/profiles/history.ts`、`src/datastores/entries.ts`；离线验证：`tests/profile-history.test.ts`、`tests/datastores.test.ts`。
+
 ## 玩家清档
 
 按游戏名（本地目录中的完整名称）或 Universe ID，删除指定账号的玩家存档：

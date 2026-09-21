@@ -63,3 +63,24 @@ test('missing source and denied target never write', async () => {
     assert.equal(calls, status === 404 ? 1 : 2);
   }
 });
+
+test('version history paginates and reads a v2 revision without writes', async () => {
+  const calls: URL[] = [];
+  const api = new DataStoreEntries(new HttpClient({ apiKey: 'fake', intervalMs: 0, fetch: (async input => {
+    const url = new URL(String(input)); calls.push(url);
+    if (url.pathname.endsWith('/versions')) {
+      assert.equal(url.searchParams.get('datastoreName'), source.datastore);
+      assert.equal(url.searchParams.get('entryKey'), source.key);
+      if (!url.searchParams.get('cursor')) return Response.json({ versions: [{ version: 'v2', deleted: false, contentLength: 20, createdTime: '2026-01-02', objectCreatedTime: '2026-01-01' }], nextPageCursor: 'next' });
+      return Response.json({ versions: [{ version: 'v1', deleted: false, contentLength: 10, createdTime: '2026-01-01', objectCreatedTime: '2026-01-01' }] });
+    }
+    assert.equal(url.pathname, '/cloud/v2/universes/123/data-stores/cloud%20%26%20config/scopes/global/entries/config%2F%E4%B8%AD%E6%96%87%40v1');
+    return Response.json({ revisionId: 'v1', revisionCreateTime: '2026-01-01', createTime: '2026-01-01', value: { ok: true }, users: ['users/1'], attributes: {} });
+  }) as typeof fetch }));
+  const versions = await api.listVersions(source, 2);
+  assert.deepEqual(versions.map(row => row.version), ['v2', 'v1']);
+  const revision = await api.getVersion(source, 'v1');
+  assert.deepEqual(revision?.value, { ok: true });
+  assert.equal(calls.length, 3);
+  await assert.rejects(api.listVersions(source, 0), /1 to 100/);
+});

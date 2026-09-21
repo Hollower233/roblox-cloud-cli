@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import { DataStoreEntries } from '../datastores/entries.js';
 import { copyProfiles, resolveProfilePlayers, resolveProfileUniverse } from '../profiles/copy.js';
 import { clearProfiles } from '../profiles/clear.js';
+import { profileHistory } from '../profiles/history.js';
 import { CredentialStore, validateKey } from '../auth/credentials.js';
 import { AppError, errorInfo, exitCode, id } from '../core/errors.js';
 import { HttpClient } from '../transport/http-client.js';
@@ -132,6 +133,27 @@ datastore.command('copy <sourceUniverseId> <targetUniverseId> <datastore> <key>'
   });
 
 const profile = program.command('profile').description('Player profile presets');
+profile.command('history <universe>')
+  .description('Read ProfileService revision history and audit fusion events; never writes DataStore data')
+  .requiredOption('--player <username-or-id>', 'One Roblox username or User ID')
+  .option('--limit <count>', 'Number of newest revisions to read (1-100)', '10')
+  .action(async (universe: string, options) => {
+    if (!/^\d+$/.test(options.limit)) throw new AppError('ARGUMENT_ERROR', 'Limit must be an integer from 1 to 100.');
+    const limit = Number(options.limit);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new AppError('ARGUMENT_ERROR', 'Limit must be an integer from 1 to 100.');
+    const local = store(), config = /^\d+$/.test(universe.trim()) ? undefined : await local.config();
+    const catalog = config?.currentUserId ? await local.catalog(config.currentUserId) : null;
+    const universeId = resolveProfileUniverse(universe, catalog?.games);
+    const http = new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal: abort.signal });
+    const players = await resolveProfilePlayers(options.player, http);
+    if (players.length !== 1) throw new AppError('ARGUMENT_ERROR', 'Provide exactly one player.');
+    const result = await profileHistory(new DataStoreEntries(http), universeId, players[0]!, limit, abort.signal);
+    const lines = result.revisions.map(row => row.deleted
+      ? `${localTime(row.createdTime)}  deleted  ${row.version}`
+      : `${localTime(row.createdTime)}  coins=${row.coins ?? '-'}  diamonds=${row.diamonds ?? '-'}  exp=${row.experience ?? '-'}  items=${row.itemCount ?? '-'}  RPS=${row.wins ?? '-'}/${row.matches ?? '-'}  ${row.version}`);
+    const fusionLines = result.fusionEvents.map(event => `${event.at === null ? 'unknown time' : localTime(event.at * 1000)}  ${event.consumed.length} items -> ${clean(event.itemId ?? event.granted ?? 'unknown')}  ${event.id}`);
+    emit(result, json(), `Player: ${clean(result.player.name)} (${result.player.userId})\nUniverse: ${universeId}\nRevisions: ${result.revisions.length}\n${lines.join('\n')}\nFusion events: ${result.fusionEvents.length}${fusionLines.length ? `\n${fusionLines.join('\n')}` : ''}`);
+  });
 profile.command('copy <sourceUniverse> <targetUniverse>')
   .description('Copy player profiles with local backups; replaces existing targets and verifies each copy')
   .requiredOption('--players <usernames-or-ids>', 'Comma-separated Roblox usernames or User IDs')
