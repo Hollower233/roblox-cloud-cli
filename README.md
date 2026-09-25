@@ -206,6 +206,15 @@ rbx profile copy "Example Production" "Example Development" --players ExamplePla
 
 此预设原样复制整条记录及其 attributes/userIds，不清除或改写 ProfileService 会话锁、元数据，也不协调正在运行的游戏服务器。应在相关玩家存档已释放且不会继续保存时复制。不同存储命名仍使用通用 `rbx datastore copy`。
 
+## 列出 DataStore Key
+
+```sh
+rbx datastore list 123456789 ExampleStore --prefix PLAYER_ --limit 500
+rbx --json datastore list 123456789 ExampleStore --with-values
+```
+
+自动按 cursor 翻页；`--limit` 默认不限，`--scope` 默认 `global`。`--with-values` 对每个 Key 逐条读取值（输出 `key<TAB>JSON`）。JSON 输出为 `{ universeId, datastore, count, entries: [{ key, value? }] }`；翻页或读值中途失败但已有结果时状态为 `partial`、退出码 3。API Key 需要 `universe-datastores.objects:list`（读值另需 `objects:read`）。模块：`src/datastores/entries.ts`；离线验证：`tests/datastores.test.ts`。
+
 ## 玩家存档历史与合成审计
 
 只读查询一个玩家的 ProfileService 历史版本，并从各版本累计的物品流水中去重汇总合成事件：

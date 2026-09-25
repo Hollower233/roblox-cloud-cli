@@ -84,3 +84,28 @@ test('version history paginates and reads a v2 revision without writes', async (
   assert.equal(calls.length, 3);
   await assert.rejects(api.listVersions(source, 0), /1 to 100/);
 });
+
+test('listKeys paginates with cursor, honors limit and returns partial results on later failure', async () => {
+  const urls: URL[] = [];
+  let page = 0;
+  const http = new HttpClient({ apiKey: 'fake-secret', intervalMs: 0, retries: 0, fetch: (async (url: string | URL) => {
+    urls.push(new URL(String(url)));
+    page++;
+    if (page === 3) return new Response('{}', { status: 403 });
+    return Response.json({ keys: Array.from({ length: 100 }, (_, i) => ({ key: `k${page}-${i}` })), nextPageCursor: `c${page}` });
+  }) as typeof fetch });
+  const entries = new DataStoreEntries(http);
+  const partial = await entries.listKeys({ universeId: '123', datastore: 'Example', scope: 'global', prefix: 'k' });
+  assert.equal(partial.keys.length, 200);
+  assert.equal(partial.complete, false);
+  assert.match(partial.error!.message, /objects:list/);
+  assert.equal(urls[0]!.searchParams.get('prefix'), 'k');
+  assert.equal(urls[1]!.searchParams.get('cursor'), 'c1');
+  page = 0; urls.length = 0;
+  const limited = await entries.listKeys({ universeId: '123', datastore: 'Example', scope: 'global', limit: 150 });
+  assert.equal(limited.keys.length, 150);
+  assert.equal(urls[1]!.searchParams.get('limit'), '50');
+  assert.equal(limited.complete, true);
+  page = 2;
+  await assert.rejects(entries.listKeys({ universeId: '123', datastore: 'Example', scope: 'global' }), /objects:list/);
+});

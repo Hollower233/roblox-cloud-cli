@@ -28,6 +28,33 @@ export class DataStoreEntries {
     if (!version) throw new AppError('INVALID_RESPONSE', 'DataStore response is missing its version.');
     return { raw: response.text, version, attributes: response.headers['roblox-entry-attributes'] ?? '{}', userIds: response.headers['roblox-entry-userids'] ?? '[]' };
   }
+  async listKeys(options: { universeId: string; datastore: string; scope: string; prefix?: string; limit?: number; signal?: AbortSignal }) {
+    const { universeId, datastore, scope, prefix = '', limit = Infinity } = options;
+    if (!datastore || !scope) throw new AppError('ARGUMENT_ERROR', 'DataStore and scope must be non-empty.');
+    if (limit !== Infinity && (!Number.isSafeInteger(limit) || limit < 1)) throw new AppError('ARGUMENT_ERROR', 'Limit must be a positive integer.');
+    const keys: string[] = [];
+    let cursor: string | undefined;
+    try {
+      do {
+        if (options.signal?.aborted) throw new AppError('CANCELLED', 'Operation cancelled.');
+        const url = new URL(`https://apis.roblox.com/datastores/v1/universes/${id(universeId)}/standard-datastores/datastore/entries`);
+        url.search = new URLSearchParams({ datastoreName: datastore, scope, limit: String(Math.min(100, limit - keys.length)),
+          ...(prefix ? { prefix } : {}), ...(cursor ? { cursor } : {}) }).toString();
+        const response = await this.http.request<{ keys?: unknown; nextPageCursor?: unknown }>(url.toString(), { auth: true });
+        if (!response || !Array.isArray(response.keys)) throw new AppError('INVALID_RESPONSE', 'Invalid DataStore key list response.');
+        for (const row of response.keys) {
+          if (!row || typeof row.key !== 'string') throw new AppError('INVALID_RESPONSE', 'Invalid key in DataStore key list response.');
+          if (keys.length < limit) keys.push(row.key);
+        }
+        cursor = typeof response.nextPageCursor === 'string' && response.nextPageCursor ? response.nextPageCursor : undefined;
+      } while (cursor && keys.length < limit);
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'FORBIDDEN') error = new AppError('FORBIDDEN', 'API Key lacks universe-datastores.objects:list for this universe. Add it to the key in Creator Hub (Open Cloud API Keys).', 403);
+      if (!keys.length) throw error;
+      return { keys, complete: false, error: error as Error };
+    }
+    return { keys, complete: true };
+  }
   async listVersions(address: EntryAddress, limit = 10): Promise<EntryVersion[]> {
     this.url(address);
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new AppError('ARGUMENT_ERROR', 'Version limit must be an integer from 1 to 100.');

@@ -132,6 +132,34 @@ datastore.command('copy <sourceUniverseId> <targetUniverseId> <datastore> <key>'
     emit(result, json(), `Copied and verified ${result.bytes} bytes. Backup: ${result.backupPath}`);
   });
 
+datastore.command('list <universeId> <datastore>')
+  .description('List entry keys (auto-paginated), optionally with values')
+  .option('--prefix <prefix>', 'Only keys starting with this prefix')
+  .option('--scope <scope>', 'DataStore scope', 'global')
+  .option('--limit <n>', 'Maximum keys to return (default: all)')
+  .option('--with-values', 'Read and include each value')
+  .action(async (universeId: string, name: string, options) => {
+    const limit = options.limit === undefined ? Infinity : Number(options.limit);
+    const local = store(), apiKey = await new CredentialStore(local.home).get();
+    const entries = new DataStoreEntries(new HttpClient({ apiKey, signal: abort.signal }));
+    const listed = await entries.listKeys({ universeId, datastore: name, scope: options.scope, prefix: options.prefix, limit, signal: abort.signal });
+    const warnings = listed.complete ? [] : [{ code: 'DATASTORE_LIST_INCOMPLETE', resource: name, message: listed.error!.message }];
+    const rows: { key: string; value?: unknown }[] = [];
+    for (const key of listed.keys) {
+      if (!options.withValues) { rows.push({ key }); continue; }
+      try {
+        const entry = await entries.get({ universeId, datastore: name, key, scope: options.scope });
+        rows.push({ key, value: entry ? JSON.parse(entry.raw) : null });
+      } catch (error) {
+        if (abort.signal.aborted) throw error;
+        warnings.push({ code: 'DATASTORE_READ_FAILED', resource: key, message: error instanceof Error ? error.message : String(error) });
+        rows.push({ key });
+      }
+    }
+    const human = rows.map(row => options.withValues ? `${clean(row.key)}\t${JSON.stringify(row.value ?? null)}` : clean(row.key));
+    emit({ universeId, datastore: name, count: rows.length, entries: rows }, json(), `${human.join('\n')}${human.length ? '\n' : ''}Total: ${rows.length}${listed.complete ? '' : ' (incomplete)'}`, warnings);
+  });
+
 const profile = program.command('profile').description('Player profile presets');
 profile.command('history <universe>')
   .description('Read ProfileService revision history and audit fusion events; never writes DataStore data')
