@@ -86,3 +86,17 @@ test('cancellation preserves completed receipts and skips remaining players', as
   if (cancelled.status !== 'error') throw new Error('Expected cancellation');
   assert.equal(cancelled.error.code, 'CANCELLED');
 });
+
+test('copying to another player rewrites target key and userIds', async () => {
+  const calls: unknown[] = [];
+  const entries = { copy: async (source: EntryAddress, target: EntryAddress, _dir: string, options?: { userIds?: string }) => {
+    calls.push([source.key, target.key, options?.userIds]);
+    return { source, target, sourceVersion: 'v1', targetVersion: 'v2', bytes: 2, sha256: 'fake', verified: true, backupPath: 'b.json' };
+  } };
+  const from = { userId: '1', name: 'ExampleFrom' }, to = { userId: '2', name: 'ExampleTo' };
+  const result = await copyProfiles(entries, '123', '123', [from], 'backups', undefined, to);
+  assert.deepEqual(calls, [['PLAYER_1', 'PLAYER_2', '[2]']]);
+  assert.equal(result.succeeded, 1);
+  await assert.rejects(copyProfiles(entries, '123', '456', [from, to], 'backups', undefined, to), /exactly one/);
+  await assert.rejects(copyProfiles(entries, '123', '123', [from], 'backups', undefined, from), /must differ/);
+});

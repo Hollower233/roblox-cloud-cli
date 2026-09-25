@@ -190,6 +190,12 @@ rbx profile copy "Example Production" "Example Development" --players "ExamplePl
 rbx profile copy 123456789 987654321 --players "12345,67890" --preset profileservice --json
 ```
 
+跨玩家复制：`--players` 只填一个源玩家，`--to` 指定目标玩家（用户名或 User ID），把源 `PLAYER_{源uid}` 写入目标 `PLAYER_{目标uid}`，并把条目 `userIds` 改写为目标玩家；源、目标游戏可以相同（但不能是同一玩家）。同样先备份目标、写入后回读校验。
+
+```sh
+rbx profile copy "Example Production" "Example Development" --players ExamplePlayerOne --to ExamplePlayerTwo
+```
+
 源、目标支持 Universe ID 或本地目录中的完整游戏名称（忽略大小写）；重名会报错，需改用 ID。名称解析使用当前缓存账号的目录，必要时先运行 `rbx universe scan` 或 `rbx universe add <UniverseId>`。直接使用两个 Universe ID 不需要本地游戏目录。
 
 `--players` 接受逗号分隔的 Roblox 用户名或 User ID，最多 100 个输入，自动去重。不支持显示名称。所有用户名解析完成后才开始复制；任一用户名不存在会终止，不写入存档。API Key 需要源读取、目标读取和创建/更新权限；用户名查询不会携带 Key。

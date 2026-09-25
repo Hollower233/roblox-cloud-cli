@@ -99,7 +99,7 @@ export class DataStoreEntries {
       throw new AppError(failure.code, `${failure.message} Backup: ${backupPath}. A delete may have occurred; inspect target before retrying.`, failure.httpStatus);
     }
   }
-  async copy(source: EntryAddress, target: EntryAddress, backupDirectory: string) {
+  async copy(source: EntryAddress, target: EntryAddress, backupDirectory: string, options: { userIds?: string } = {}) {
     this.url(source); this.url(target);
     if (source.universeId === target.universeId && source.datastore === target.datastore && source.scope === target.scope && source.key === target.key) throw new AppError('ARGUMENT_ERROR', 'Source and target must differ.');
     const value = await this.get(source);
@@ -115,7 +115,7 @@ export class DataStoreEntries {
     try {
       await this.http.request(url.toString(), { auth: true, rawBody: value.raw, headers: {
         'content-md5': createHash('md5').update(value.raw).digest('base64'),
-        'roblox-entry-attributes': value.attributes, 'roblox-entry-userids': value.userIds,
+        'roblox-entry-attributes': value.attributes, 'roblox-entry-userids': options.userIds ?? value.userIds,
       } });
       const actual = await this.get(target);
       if (!actual || actual.raw !== value.raw) throw new AppError('INVALID_RESPONSE', 'Target readback does not exactly match source bytes.');

@@ -44,20 +44,27 @@ export async function resolveProfilePlayers(input: string, http: HttpClient): Pr
 }
 
 export async function copyProfiles(entries: Pick<DataStoreEntries, 'copy'>, sourceUniverseId: string, targetUniverseId: string,
-  players: ProfilePlayer[], backupDirectory: string, signal?: AbortSignal) {
+  players: ProfilePlayer[], backupDirectory: string, signal?: AbortSignal, targetPlayer?: ProfilePlayer) {
   id(sourceUniverseId); id(targetUniverseId);
-  if (sourceUniverseId === targetUniverseId) throw new AppError('ARGUMENT_ERROR', 'Source and target universes must differ.');
   if (!players.length) throw new AppError('ARGUMENT_ERROR', 'At least one player is required.');
   for (const player of players) id(player.userId);
+  if (targetPlayer) {
+    id(targetPlayer.userId);
+    if (new Set(players.map(player => player.userId)).size !== 1) throw new AppError('ARGUMENT_ERROR', 'Copying to another player requires exactly one source player.');
+    if (sourceUniverseId === targetUniverseId && players[0]!.userId === targetPlayer.userId) throw new AppError('ARGUMENT_ERROR', 'Source and target profiles must differ.');
+  } else if (sourceUniverseId === targetUniverseId) throw new AppError('ARGUMENT_ERROR', 'Source and target universes must differ.');
   const results = [];
   for (const player of [...new Map(players.map(player => [player.userId, player])).values()]) {
     const address = { datastore: profileServicePreset.datastore, scope: profileServicePreset.scope, key: `${profileServicePreset.keyPrefix}${player.userId}` };
+    const targetAddress = targetPlayer ? { ...address, key: `${profileServicePreset.keyPrefix}${targetPlayer.userId}` } : address;
+    const receipt = { ...player, key: address.key, ...(targetPlayer ? { targetPlayer, targetKey: targetAddress.key } : {}) };
     try {
       if (signal?.aborted) throw new AppError('CANCELLED', 'Operation cancelled.');
-      const result = await entries.copy({ ...address, universeId: sourceUniverseId }, { ...address, universeId: targetUniverseId }, backupDirectory);
-      results.push({ ...player, key: address.key, status: 'success' as const, result });
+      const result = await entries.copy({ ...address, universeId: sourceUniverseId }, { ...targetAddress, universeId: targetUniverseId }, backupDirectory,
+        targetPlayer ? { userIds: JSON.stringify([Number(targetPlayer.userId)]) } : {});
+      results.push({ ...receipt, status: 'success' as const, result });
     } catch (error) {
-      results.push({ ...player, key: address.key, status: 'error' as const, error: errorInfo(error) });
+      results.push({ ...receipt, status: 'error' as const, error: errorInfo(error) });
       if (signal?.aborted || error instanceof AppError && error.code === 'CANCELLED') break;
     }
   }

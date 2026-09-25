@@ -157,6 +157,7 @@ profile.command('history <universe>')
 profile.command('copy <sourceUniverse> <targetUniverse>')
   .description('Copy player profiles with local backups; replaces existing targets and verifies each copy')
   .requiredOption('--players <usernames-or-ids>', 'Comma-separated Roblox usernames or User IDs')
+  .option('--to <username-or-id>', 'Write the single source player profile into this other player (userIds rewritten)')
   .option('--preset <preset>', 'Storage preset: profileservice (Default / PLAYER_{uid} / global)', 'profileservice')
   .action(async (source: string, target: string, options) => {
     if (options.preset !== 'profileservice') throw new AppError('ARGUMENT_ERROR', 'Supported preset: profileservice.');
@@ -165,13 +166,16 @@ profile.command('copy <sourceUniverse> <targetUniverse>')
     const config = needsCatalog ? await local.config() : undefined;
     const catalog = config?.currentUserId ? await local.catalog(config.currentUserId) : null;
     const sourceId = resolveProfileUniverse(source, catalog?.games), targetId = resolveProfileUniverse(target, catalog?.games);
-    if (sourceId === targetId) throw new AppError('ARGUMENT_ERROR', 'Source and target universes must differ.');
+    if (sourceId === targetId && !options.to) throw new AppError('ARGUMENT_ERROR', 'Source and target universes must differ.');
     const http = new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal: abort.signal });
     const players = await resolveProfilePlayers(options.players, http);
-    const result = await copyProfiles(new DataStoreEntries(http), sourceId, targetId, players, resolve(local.home, 'datastore-backups'), abort.signal);
+    const targets = options.to ? await resolveProfilePlayers(options.to, http) : [];
+    if (targets.length > 1) throw new AppError('ARGUMENT_ERROR', '--to accepts exactly one player.');
+    const targetPlayer = targets[0];
+    const result = await copyProfiles(new DataStoreEntries(http), sourceId, targetId, players, resolve(local.home, 'datastore-backups'), abort.signal, targetPlayer);
     const warnings = result.results.filter(item => item.status === 'error').map(item => ({ code: 'PROFILE_COPY_FAILED', resource: item.userId, message: item.error!.message }));
     const human = result.results.map(item => item.status === 'success'
-      ? `${clean(item.name)} (${item.userId}): copied and verified ${item.result!.bytes} bytes. Backup: ${item.result!.backupPath}`
+      ? `${clean(item.name)} (${item.userId})${'targetPlayer' in item && item.targetPlayer ? ` -> ${clean(item.targetPlayer.name)} (${item.targetPlayer.userId})` : ''}: copied and verified ${item.result!.bytes} bytes. Backup: ${item.result!.backupPath}`
       : `${clean(item.name)} (${item.userId}): FAILED [${item.error!.code}] ${clean(item.error!.message)}`).join('\n');
     emit(result, json(), `${human}\nSucceeded: ${result.succeeded}; failed: ${result.failed}; skipped: ${result.skipped}`, warnings);
     if (abort.signal.aborted || result.results.some(item => item.status === 'error' && item.error.code === 'CANCELLED')) process.exitCode = 130;
