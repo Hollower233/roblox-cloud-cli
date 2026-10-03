@@ -1,4 +1,6 @@
 export { HttpClient } from './transport/http-client.js';
+export { UserRestrictions, banBody } from './moderation/restrictions.js';
+export type { BanOptions } from './moderation/restrictions.js';
 export { downloadAssetImage, parseAssetId } from './assets/download.js';
 export type { AssetDownloadOptions } from './assets/download.js';
 export { clearAssetCache } from './cache/assets.js';

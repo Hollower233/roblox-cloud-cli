@@ -305,3 +305,21 @@ Universe 必须已在本地游戏目录中（`rbx universe scan` 或 `rbx univer
 
 - 文件夹解析与计划：`src/icons/frames.ts`；上传审核与续跑：`src/icons/countdown.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`；离线测试：`tests/icons.test.ts`。
+
+## 玩家封禁与解封
+
+按整个体验（Universe）操作，支持游戏目录中的名称或 Universe ID，玩家支持 Username 或 UserId。
+
+```powershell
+rbx ban 123 --player 456 --duration 30m --reason "Temporary maintenance" --dry-run
+rbx ban 123 --player 456 --duration 30m --reason "Temporary maintenance"
+rbx ban 123 --player 456 --permanent --reason "Experience rules violation"
+rbx ban-status 123 --player 456
+rbx unban 123 --player 456
+```
+
+封禁必须指定 --duration（整数加 s/m/h/d）或 --permanent，二者互斥。--reason 为玩家可见原因；--private-reason 为内部原因。默认仅针对指定账号，显式 --include-alts 才启用关联账号封禁。封禁、解封支持 --dry-run 和全局 --json；预览只解析目标，不更新封禁，也不验证写入权限。
+
+API Key 需对目标体验拥有 universe.user-restriction:write；查询需 universe.user-restriction:read。封禁会阻止进入并踢出已加入的玩家，但清档仍须等待存档会话释放。封禁请求不会自动重试；响应丢失时先查询状态。解封仅修改体验级限制，不清除单独的 Place 级封禁。
+
+官方协议：https://create.roblox.com/docs/cloud/reference/features/bans-and-blocks

@@ -9,6 +9,7 @@ import { DataStoreEntries } from '../datastores/entries.js';
 import { copyProfiles, resolveProfilePlayers, resolveProfileUniverse } from '../profiles/copy.js';
 import { clearProfiles } from '../profiles/clear.js';
 import { profileHistory } from '../profiles/history.js';
+import { UserRestrictions, banBody } from '../moderation/restrictions.js';
 import { CredentialStore, validateKey } from '../auth/credentials.js';
 import { AppError, errorInfo, exitCode, id } from '../core/errors.js';
 import { HttpClient } from '../transport/http-client.js';
@@ -159,6 +160,33 @@ datastore.command('list <universeId> <datastore>')
     const human = rows.map(row => options.withValues ? `${clean(row.key)}\t${JSON.stringify(row.value ?? null)}` : clean(row.key));
     emit({ universeId, datastore: name, count: rows.length, entries: rows }, json(), `${human.join('\n')}${human.length ? '\n' : ''}Total: ${rows.length}${listed.complete ? '' : ' (incomplete)'}`, warnings);
   });
+
+for (const mode of ['ban', 'unban', 'ban-status'] as const) {
+  const command = program.command(`${mode} <universe>`)
+    .description(mode === 'ban' ? 'Ban one player from every place in an experience' : mode === 'unban' ? 'Remove one player restriction at experience level' : 'Read one player restriction')
+    .requiredOption('--player <username-or-id>', 'One Roblox username or User ID');
+  if (mode !== 'ban-status') command.option('--dry-run', 'Resolve target and preview request without updating restrictions');
+  if (mode === 'ban') command.option('--duration <duration>', 'Positive integer with s/m/h/d, e.g. 30m or 1d')
+    .option('--permanent', 'Permanently ban the player')
+    .requiredOption('--reason <text>', 'Player-visible reason (max 400 characters)')
+    .option('--private-reason <text>', 'Internal reason (max 1000 characters; defaults to reason)')
+    .option('--include-alts', 'Also propagate restriction to suspected alternate accounts');
+  command.action(async (universe: string, options) => {
+    if (mode === 'ban') banBody(options);
+    if (options.player.includes(',')) throw new AppError('ARGUMENT_ERROR', 'Provide exactly one player.');
+    const local = store(), config = /^\d+$/.test(universe.trim()) ? undefined : await local.config();
+    const catalog = config?.currentUserId ? await local.catalog(config.currentUserId) : null;
+    const universeId = resolveProfileUniverse(universe, catalog?.games);
+    const http = new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal: abort.signal });
+    const players = await resolveProfilePlayers(options.player, http);
+    if (players.length !== 1) throw new AppError('ARGUMENT_ERROR', 'Provide exactly one player.');
+    const player = players[0]!, restrictions = new UserRestrictions(http);
+    const result = mode === 'ban' ? await restrictions.ban(universeId, player.userId, options, options.dryRun)
+      : mode === 'unban' ? await restrictions.unban(universeId, player.userId, options.dryRun)
+      : await restrictions.get(universeId, player.userId);
+    emit({ player, result }, json(), `${options.dryRun ? 'Preview' : mode}: ${clean(player.name)} (${player.userId}) in ${universeId}\n${clean(JSON.stringify(result, null, 2))}`);
+  });
+}
 
 const profile = program.command('profile').description('Player profile presets');
 profile.command('history <universe>')

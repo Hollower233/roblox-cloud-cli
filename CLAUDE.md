@@ -60,3 +60,9 @@
 - 历史版本与 ProfileService 摘要模块：`src/datastores/entries.ts`、`src/profiles/history.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/datastores.test.ts`、`tests/profile-history.test.ts`；使用文档：`README.md`。
+
+## 玩家封禁
+
+- 封禁与解封模块：`src/moderation/restrictions.ts`。
+- 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
+- 离线验证：`tests/restrictions.test.ts`；使用文档：`README.md`。
