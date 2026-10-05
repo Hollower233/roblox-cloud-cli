@@ -4,15 +4,16 @@ import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { AppError, id } from '../core/errors.js';
 import type { Catalog } from '../universes/models.js';
+import { validatePlayerCatalog, type PlayerCatalog } from '../players/catalog.js';
 
 export interface Config { schemaVersion: 1; currentUserId?: string; accounts: Record<string, { manualIds: string[] }> }
 export function defaultHome(): string { return process.env.RBX_HOME ?? join(process.platform === 'win32' ? process.env.LOCALAPPDATA ?? homedir() : process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'roblox-cloud-cli'); }
 function fsCode(e: unknown): string | undefined { return (e as NodeJS.ErrnoException)?.code; }
 export class LocalStore {
   constructor(public home: string = defaultHome()) {}
-  private async read(name: string): Promise<any | null> {
+  private async read(name: string, missing: unknown = null): Promise<any | null> {
     try { return JSON.parse(await readFile(join(this.home, name), 'utf8')); }
-    catch (e) { if (fsCode(e) === 'ENOENT') return null; throw new AppError('STORAGE_ERROR', `Cannot read ${name}; the file may be invalid.`); }
+    catch (e) { if (fsCode(e) === 'ENOENT') return missing; throw new AppError('STORAGE_ERROR', `Cannot read ${name}; the file may be invalid.`); }
   }
   async write(name: string, value: unknown): Promise<void> {
     await mkdir(this.home, { recursive: true, mode: 0o700 });
@@ -49,6 +50,10 @@ export class LocalStore {
     return c;
   }
   saveConfig(config: Config): Promise<void> { return this.write('config.json', config); }
+  async players(): Promise<PlayerCatalog> {
+    return validatePlayerCatalog(await this.read('players.json', { schemaVersion: 1, players: [] }));
+  }
+  savePlayers(catalog: PlayerCatalog): Promise<void> { return this.write('players.json', validatePlayerCatalog(catalog)); }
   async catalog(userId: string): Promise<Catalog | null> {
     const c = await this.read(`catalog-${id(userId)}.json`);
     if (c === null) return null;

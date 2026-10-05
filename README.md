@@ -97,11 +97,12 @@ JSON 内 CCU 保留整数，表格才格式化为 k。错误格式为 `{ "schema
 
 Windows 默认在 `%LOCALAPPDATA%/roblox-cloud-cli/`；其他平台使用 `$XDG_DATA_HOME/roblox-cloud-cli/`，未设置时为 `~/.local/share/roblox-cloud-cli/`。
 
-可使用 `RBX_HOME` 环境变量或全局 `--home <目录>` 覆盖。缓存按 Roblox 用户 ID 隔离，切换 Key 不会把另一账号的数据混进来。
+可使用 `RBX_HOME` 环境变量或全局 `--home <目录>` 覆盖。游戏目录按 Roblox 用户 ID 隔离；玩家清单在同一应用数据目录中共用，切换 Key 后仍然可用。
 
 - `config.json`：当前账号与按账号保存的手动登记 ID。
 - `credential.dpapi`：Windows 加密凭证。
 - `catalog-<userId>.json`：带 schemaVersion 的游戏目录。
+- `players.json`：本地共用的玩家清单（UID、真实用户名、可选别名），不要提交真实玩家数据。
 - `.write.lock`：写入锁，包含持有进程 PID；程序正常退出会释放。崩溃遗留时先确认该进程已结束，再手动删除这个锁文件。
 
 单文件写入使用临时文件加原子替换。配置和目录并非跨文件事务；手动添加先保存登记意图，再保存目录，中断后可再次扫描恢复。
@@ -323,3 +324,30 @@ rbx unban 123 --player 456
 API Key 需对目标体验拥有 universe.user-restriction:write；查询需 universe.user-restriction:read。封禁会阻止进入并踢出已加入的玩家，但清档仍须等待存档会话释放。封禁请求不会自动重试；响应丢失时先查询状态。解封仅修改体验级限制，不清除单独的 Place 级封禁。
 
 官方协议：https://create.roblox.com/docs/cloud/reference/features/bans-and-blocks
+
+## 玩家清单
+
+```sh
+rbx player add FriesOverEverything
+rbx player add FriesOverEverything --alias 水木
+rbx player add AtysGames --alias 船长
+rbx player list
+rbx player find fries
+rbx player alias FriesOverEverything 水木
+rbx player remove FriesOverEverything
+```
+
+`add` 使用真实 Roblox 用户名在线查询 UID，不接受 Display Name、别名或 UID，也不需要 API Key。只有显式添加才保存；重复 UID 更新用户名，未传 `--alias` 时保留已有别名。`alias` 设置或替换一个别名。别名支持中文、最多 100 字符，不允许逗号、控制字符或纯数字。`remove` 仅移除本地记录。
+
+`list`、`find`、`alias`、`remove` 只使用本地数据，不需要网络或凭证。匹配忽略大小写：UID 精确匹配；其他输入优先匹配完整用户名或完整别名，未命中时按用户名片段匹配。`find` 返回所有候选；需要单个玩家的命令在多个候选时返回参数错误并列出姓名、UID 和别名，须改用明确 UID 重试。别名也可能重名，不会自动选择其中一人。
+
+`profile history`、`profile copy`（含 `--to`）、`profile clear`、`ban`、`unban` 和 `ban-status` 使用同样的清单解析。唯一片段或别名命中后直接使用保存的 UID；清单未命中的真实用户名保留在线查询，查询结果不自动写入清单。
+
+```sh
+rbx profile history "BVB TEST" --player fries
+rbx profile history "BVB TEST" --player 水木
+```
+
+清单存于应用数据目录的 `players.json`，不按登录账号或游戏拆分。用户名是添加时的快照；玩家改名后可用新用户名重新 `add`，相同 UID 会更新原记录。`--json` 的列表/查询数据为 `{ players: [...] }`，添加/修改为 `{ player: ... }`，移除为 `{ removed: ... }`；每条记录为 `{ userId, name, alias? }`。
+
+SDK 可用 `PlayerCatalogService(new LocalStore(home))` 管理清单；`resolveProfilePlayers(input, http, savedPlayers)` 接收可选的本地记录列表。SDK 添加已解析的玩家时调用 `service.add(player, alias?)`，可先用 `resolveProfilePlayers(username, http)` 获取真实 UID。

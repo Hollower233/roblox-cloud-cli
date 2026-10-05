@@ -11,6 +11,8 @@ export { CatalogService, selectGames } from './universes/catalog.js';
 export type { CatalogOptions } from './universes/catalog.js';
 export * from './universes/models.js';
 export { LocalStore, defaultHome } from './storage/store.js';
+export { PlayerCatalogService, findPlayers, selectPlayer } from './players/catalog.js';
+export type { SavedPlayer, PlayerCatalog } from './players/catalog.js';
 export { CredentialStore } from './auth/credentials.js';
 export { AppError } from './core/errors.js';
 export { DataStoreEntries } from './datastores/entries.js';

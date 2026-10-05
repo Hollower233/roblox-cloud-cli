@@ -15,6 +15,7 @@ import { AppError, errorInfo, exitCode, id } from '../core/errors.js';
 import { HttpClient } from '../transport/http-client.js';
 import { RobloxApi } from '../roblox/api.js';
 import { LocalStore, defaultHome } from '../storage/store.js';
+import { PlayerCatalogService, type SavedPlayer } from '../players/catalog.js';
 import { CatalogService, selectGames } from '../universes/catalog.js';
 import { emit, renderCatalog, renderIconPlan, localTime, remaining, clean } from './output.js';
 import { IconAssets, IconCountdown, type CountdownEvent, type CountdownOptions } from '../icons/countdown.js';
@@ -30,6 +31,12 @@ const program = new Command().name('rbx').description('Roblox Cloud CLI: credent
   .exitOverride().configureOutput({ outputError: () => {} });
 function store(): LocalStore { return new LocalStore(resolve(program.opts().home ?? defaultHome())); }
 function json(): boolean { return Boolean(program.opts().json); }
+async function resolvePlayers(input: string, http: HttpClient) {
+  return resolveProfilePlayers(input, http, (await store().players()).players);
+}
+function renderPlayers(players: SavedPlayer[]): string {
+  return `${players.map(player => `${player.userId}\t${clean(player.name)}${player.alias ? `\t${clean(player.alias)}` : ''}`).join('\n')}${players.length ? '\n' : ''}Total: ${players.length}`;
+}
 function api(key: string): RobloxApi { return new RobloxApi(new HttpClient({ apiKey: key, signal: abort.signal }), key); }
 function service(client: RobloxApi): CatalogService { return new CatalogService(client, { signal: abort.signal, progress: message => { process.stderr.write(clean(message) + '\n'); } }); }
 function envWarning(): Warning[] { return process.env.ROBLOX_API_KEY !== undefined ? [{ code: 'ENV_KEY_OVERRIDES_STORED_KEY', message: 'ROBLOX_API_KEY takes precedence over the saved credential.' }] : []; }
@@ -116,6 +123,32 @@ universe.command('list').description('Read the local cache only; never calls Rob
     emit({ ...catalog, games }, json(), renderCatalog(catalog, games), catalog.warnings);
   });
 
+const player = program.command('player').description('Manage a shared local player catalog');
+player.command('add <username>').description('Look up a Roblox username and explicitly save its User ID')
+  .option('--alias <alias>', 'Optional local alias')
+  .action(async (username: string, options) => {
+    if (!/^[a-zA-Z0-9_]+$/.test(username) || /^\d+$/.test(username)) throw new AppError('ARGUMENT_ERROR', 'Provide one Roblox username.');
+    const [resolved] = await resolveProfilePlayers(username, new HttpClient({ signal: abort.signal }));
+    const saved = await new PlayerCatalogService(store()).add(resolved!, options.alias);
+    emit({ player: saved }, json(), renderPlayers([saved]));
+  });
+player.command('list').description('List saved players offline').action(async () => {
+  const players = await new PlayerCatalogService(store()).list();
+  emit({ players }, json(), renderPlayers(players));
+});
+player.command('find <query>').description('Search saved players offline by name, alias or User ID').action(async (query: string) => {
+  const players = await new PlayerCatalogService(store()).find(query);
+  emit({ players }, json(), renderPlayers(players));
+});
+player.command('alias <player> <alias>').description('Set or replace a saved player alias').action(async (input: string, alias: string) => {
+  const saved = await new PlayerCatalogService(store()).alias(input, alias);
+  emit({ player: saved }, json(), renderPlayers([saved]));
+});
+player.command('remove <player>').description('Remove one player from the local catalog').action(async (input: string) => {
+  const saved = await new PlayerCatalogService(store()).remove(input);
+  emit({ removed: saved }, json(), `Removed ${clean(saved.name)} (${saved.userId}) from the local player catalog.`);
+});
+
 const datastore = program.command('datastore').description('Read and copy standard DataStore entries');
 datastore.command('get <universeId> <datastore> <key>').option('--scope <scope>', 'DataStore scope', 'global')
   .action(async (universeId, name, key, options) => {
@@ -164,7 +197,7 @@ datastore.command('list <universeId> <datastore>')
 for (const mode of ['ban', 'unban', 'ban-status'] as const) {
   const command = program.command(`${mode} <universe>`)
     .description(mode === 'ban' ? 'Ban one player from every place in an experience' : mode === 'unban' ? 'Remove one player restriction at experience level' : 'Read one player restriction')
-    .requiredOption('--player <username-or-id>', 'One Roblox username or User ID');
+    .requiredOption('--player <username-or-id>', 'One username, saved alias/name fragment or User ID');
   if (mode !== 'ban-status') command.option('--dry-run', 'Resolve target and preview request without updating restrictions');
   if (mode === 'ban') command.option('--duration <duration>', 'Positive integer with s/m/h/d, e.g. 30m or 1d')
     .option('--permanent', 'Permanently ban the player')
@@ -178,7 +211,7 @@ for (const mode of ['ban', 'unban', 'ban-status'] as const) {
     const catalog = config?.currentUserId ? await local.catalog(config.currentUserId) : null;
     const universeId = resolveProfileUniverse(universe, catalog?.games);
     const http = new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal: abort.signal });
-    const players = await resolveProfilePlayers(options.player, http);
+    const players = await resolvePlayers(options.player, http);
     if (players.length !== 1) throw new AppError('ARGUMENT_ERROR', 'Provide exactly one player.');
     const player = players[0]!, restrictions = new UserRestrictions(http);
     const result = mode === 'ban' ? await restrictions.ban(universeId, player.userId, options, options.dryRun)
@@ -191,7 +224,7 @@ for (const mode of ['ban', 'unban', 'ban-status'] as const) {
 const profile = program.command('profile').description('Player profile presets');
 profile.command('history <universe>')
   .description('Read ProfileService revision history and audit fusion events; never writes DataStore data')
-  .requiredOption('--player <username-or-id>', 'One Roblox username or User ID')
+  .requiredOption('--player <username-or-id>', 'One username, saved alias/name fragment or User ID')
   .option('--limit <count>', 'Number of newest revisions to read (1-100)', '10')
   .action(async (universe: string, options) => {
     if (!/^\d+$/.test(options.limit)) throw new AppError('ARGUMENT_ERROR', 'Limit must be an integer from 1 to 100.');
@@ -201,7 +234,7 @@ profile.command('history <universe>')
     const catalog = config?.currentUserId ? await local.catalog(config.currentUserId) : null;
     const universeId = resolveProfileUniverse(universe, catalog?.games);
     const http = new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal: abort.signal });
-    const players = await resolveProfilePlayers(options.player, http);
+    const players = await resolvePlayers(options.player, http);
     if (players.length !== 1) throw new AppError('ARGUMENT_ERROR', 'Provide exactly one player.');
     const result = await profileHistory(new DataStoreEntries(http), universeId, players[0]!, limit, abort.signal);
     const lines = result.revisions.map(row => row.deleted
@@ -212,7 +245,7 @@ profile.command('history <universe>')
   });
 profile.command('copy <sourceUniverse> <targetUniverse>')
   .description('Copy player profiles with local backups; replaces existing targets and verifies each copy')
-  .requiredOption('--players <usernames-or-ids>', 'Comma-separated Roblox usernames or User IDs')
+  .requiredOption('--players <usernames-or-ids>', 'Comma-separated usernames, saved aliases/name fragments or User IDs')
   .option('--to <username-or-id>', 'Write the single source player profile into this other player (userIds rewritten)')
   .option('--preset <preset>', 'Storage preset: profileservice (Default / PLAYER_{uid} / global)', 'profileservice')
   .action(async (source: string, target: string, options) => {
@@ -224,8 +257,8 @@ profile.command('copy <sourceUniverse> <targetUniverse>')
     const sourceId = resolveProfileUniverse(source, catalog?.games), targetId = resolveProfileUniverse(target, catalog?.games);
     if (sourceId === targetId && !options.to) throw new AppError('ARGUMENT_ERROR', 'Source and target universes must differ.');
     const http = new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal: abort.signal });
-    const players = await resolveProfilePlayers(options.players, http);
-    const targets = options.to ? await resolveProfilePlayers(options.to, http) : [];
+    const players = await resolvePlayers(options.players, http);
+    const targets = options.to ? await resolvePlayers(options.to, http) : [];
     if (targets.length > 1) throw new AppError('ARGUMENT_ERROR', '--to accepts exactly one player.');
     const targetPlayer = targets[0];
     const result = await copyProfiles(new DataStoreEntries(http), sourceId, targetId, players, resolve(local.home, 'datastore-backups'), abort.signal, targetPlayer);
@@ -240,7 +273,7 @@ profile.command('copy <sourceUniverse> <targetUniverse>')
 
 profile.command('clear <universe>')
   .description('Delete selected player profiles after backup and verify absence; players must be offline')
-  .requiredOption('--players <usernames-or-ids>', 'Comma-separated Roblox usernames or User IDs')
+  .requiredOption('--players <usernames-or-ids>', 'Comma-separated usernames, saved aliases/name fragments or User IDs')
   .option('--preset <preset>', 'Storage preset: profileservice (Default / PLAYER_{uid} / global)', 'profileservice')
   .option('--dry-run', 'Read and validate profiles without deleting or creating backups')
   .action(async (universe: string, options) => {
@@ -250,7 +283,7 @@ profile.command('clear <universe>')
     const catalog = config?.currentUserId ? await local.catalog(config.currentUserId) : null;
     const universeId = resolveProfileUniverse(universe, catalog?.games);
     const http = new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal: abort.signal });
-    const players = await resolveProfilePlayers(options.players, http);
+    const players = await resolvePlayers(options.players, http);
     const result = await clearProfiles(new DataStoreEntries(http), universeId, players, resolve(local.home, 'datastore-backups'), { dryRun: options.dryRun, signal: abort.signal });
     const warnings = result.results.filter(row => row.status === 'error').map(row => ({ code: 'PROFILE_CLEAR_FAILED', resource: row.userId, message: row.error.message }));
     const human = result.results.map(row => row.status === 'error'

@@ -8,3 +8,4 @@ coverage/
 *.dpapi
 *-scan.json
 .local/
+players.json

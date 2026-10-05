@@ -2,6 +2,7 @@ import { AppError, errorInfo, id } from '../core/errors.js';
 import { DataStoreEntries } from '../datastores/entries.js';
 import { HttpClient } from '../transport/http-client.js';
 import type { Game } from '../universes/models.js';
+import { selectPlayer, type SavedPlayer } from '../players/catalog.js';
 
 export interface ProfilePlayer { userId: string; name: string }
 export const profileServicePreset = Object.freeze({ datastore: 'Default', scope: 'global', keyPrefix: 'PLAYER_' });
@@ -16,14 +17,19 @@ export function resolveProfileUniverse(value: string, games: Pick<Game, 'univers
   return id(matches[0]!);
 }
 
-export async function resolveProfilePlayers(input: string, http: HttpClient): Promise<ProfilePlayer[]> {
+export async function resolveProfilePlayers(input: string, http: HttpClient, savedPlayers: readonly SavedPlayer[] = []): Promise<ProfilePlayer[]> {
   const names = [...new Set(input.split(',').map(value => value.trim().toLowerCase()))];
-  if (names.some(name => !name || !/^[a-z0-9_]+$/.test(name)) || names.length > 100) {
+  if (names.some(name => !name) || names.length > 100) {
     throw new AppError('ARGUMENT_ERROR', 'Provide 1–100 comma-separated Roblox usernames or User IDs.');
   }
   const resolved = new Map<string, ProfilePlayer>();
-  const usernames = names.filter(name => !/^\d+$/.test(name));
-  for (const name of names.filter(name => /^\d+$/.test(name))) resolved.set(name, { userId: id(name), name });
+  for (const name of names) {
+    const saved = selectPlayer(name, savedPlayers);
+    if (saved) resolved.set(name, { userId: saved.userId, name: saved.name });
+    else if (/^\d+$/.test(name)) resolved.set(name, { userId: id(name), name });
+    else if (!/^[a-z0-9_]+$/.test(name)) throw new AppError('ARGUMENT_ERROR', `Player not found in local catalog: ${name}. Provide a Roblox username or User ID.`);
+  }
+  const usernames = names.filter(name => !resolved.has(name));
   if (usernames.length) {
     const response = await http.request<{ data?: unknown }>('https://users.roblox.com/v1/usernames/users', {
       body: { usernames, excludeBannedUsers: false },

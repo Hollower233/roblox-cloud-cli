@@ -66,3 +66,10 @@
 - 封禁与解封模块：`src/moderation/restrictions.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/restrictions.test.ts`；使用文档：`README.md`。
+
+## 玩家清单
+
+- 玩家清单与查找模块：`src/players/catalog.ts`；玩家解析接入：`src/profiles/copy.ts`。
+- 本地存储：`src/storage/store.ts`；数据：应用数据目录下的 `players.json`。
+- 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
+- 离线验证：`tests/players.test.ts`；使用文档：`README.md`。
