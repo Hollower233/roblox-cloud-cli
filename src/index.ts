@@ -1,4 +1,6 @@
 export { HttpClient } from './transport/http-client.js';
+export { GroupRoles, groupPlayerInput } from './groups/roles.js';
+export type { GroupRole, GroupMember, RoleSelector } from './groups/roles.js';
 export { UserRestrictions, banBody } from './moderation/restrictions.js';
 export type { BanOptions } from './moderation/restrictions.js';
 export { downloadAssetImage, parseAssetId } from './assets/download.js';

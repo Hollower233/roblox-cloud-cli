@@ -73,3 +73,9 @@
 - 本地存储：`src/storage/store.ts`；数据：应用数据目录下的 `players.json`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/players.test.ts`；使用文档：`README.md`。
+
+## 群组角色管理
+
+- 角色查询、成员查询与批量添加/移除模块：`src/groups/roles.ts`。
+- 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
+- 离线验证：`tests/groups.test.ts`；使用文档：`README.md`。

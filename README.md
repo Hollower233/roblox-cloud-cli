@@ -351,3 +351,39 @@ rbx profile history "BVB TEST" --player 水木
 清单存于应用数据目录的 `players.json`，不按登录账号或游戏拆分。用户名是添加时的快照；玩家改名后可用新用户名重新 `add`，相同 UID 会更新原记录。`--json` 的列表/查询数据为 `{ players: [...] }`，添加/修改为 `{ player: ... }`，移除为 `{ removed: ... }`；每条记录为 `{ userId, name, alias? }`。
 
 SDK 可用 `PlayerCatalogService(new LocalStore(home))` 管理清单；`resolveProfilePlayers(input, http, savedPlayers)` 接收可选的本地记录列表。SDK 添加已解析的玩家时调用 `service.add(player, alias?)`，可先用 `resolveProfilePlayers(username, http)` 获取真实 UID。
+
+## 群组角色管理
+
+通用群组角色命令支持任意可见角色，不绑定 Tester 或特定群组。需要有效 API Key；查询要求 `group:read`，添加/移除（包括预览）要求 `group:read` 和 `group:write`。`legacy-group:manage` 不替代这两个 scope。
+
+```sh
+rbx group roles 123
+rbx group member 123 --players "ExampleUser,456"
+rbx group role grant 123 --role "Tester" --players "ExampleUser,456" --dry-run
+rbx group role grant 123 --role-id 789 --players-file ./players.txt
+rbx group role revoke 123 --role-id 789 --players "456"
+rbx --json group role grant 123 --role "Moderator" --players "456,457"
+```
+
+示例 ID 与玩家名均为占位。`--role` 按完整名称区分大小写匹配，重名要求改用 `--role-id`；ID 是角色 ID，不是 rank。两个选项必须且只能指定一个。玩家使用 `--players` 或 `--players-file` 二选一，最多 100 个输入，按 UID 去重；支持用户名、数字 User ID、本地玩家清单别名/唯一片段和 `https://www.roblox.com/users/<UserId>/profile` 链接。文件为 UTF-8，支持每行一个或逗号分隔，不带表头。玩家解析结果不会自动保存。
+
+角色列表仅代表当前账号可见的角色，`management: unknown` 表示未能预先确认管理权限。CLI 检查 Key 的 scope，但不根据 rank 猜测账号能否操作具体玩家；最终由 Roblox 检查账号权限、角色层级和资源访问限制。403 会显示拒绝及可能的检查方向，不声称知道具体原因。命令不支持修改自己的角色、Guest 或 Owner 角色。`--dry-run` 在线解析玩家、查询角色与当前成员状态，不提交修改，也不能证明账号具有实际写入权限。
+
+添加/移除使用 Open Cloud `assignRole` / `unassignRole`，保留其他角色；未入群不会自动加入或接受申请。读取完整 `roles` 数组，缺失时拒绝修改，不用最高角色字段 `role` 推断完整权限。角色和成员查询均处理分页，成员按 UID 过滤，无需扫描整个群组。
+
+每次写入后回读确认目标角色是否存在/消失；为容忍查询延迟，最多回读 4 次，额外等待依次为 300/600/900 毫秒，不自动重试写入。每个玩家结果为 `success`（回读确认）、`unchanged`（无需修改）、`planned`（预览）、`not-member`（未入群）、`error`（查询失败或明确拒绝）、`unverified`（已尝试写入但未确认结果）。出现 `unverified` 时先用 `group member` 核对再决定重试。单个玩家失败继续处理其他人；取消或 Key 失效停止，未处理人数见 `skipped`。批量操作非原子操作，无自动回滚。
+
+JSON 的添加/移除结果包含 `groupId`、`role`、`action`、`dryRun`、`players`、`results`、`skipped`；成员查询包含 `groupId`、`results`，未入群的 `member` 为 `null`。部分失败/未入群/待核对使用统一 warnings 和退出码 3；整批参数或权限错误使用统一错误输出。
+
+SDK 导出 `GroupRoles`、`groupPlayerInput` 及对应类型：
+
+```ts
+const identity = await new RobloxApi(http, apiKey).identity();
+const groups = new GroupRoles(http, identity); // http 需配置同一个 apiKey
+await groups.roles('123');
+await groups.member('123', '456');
+await groups.change('123', { name: 'Tester' }, ['456'], 'grant', true); // 预览
+await groups.change('123', { id: '789' }, ['456'], 'revoke');
+```
+
+接口仍为 Beta，参考 [Roblox 群组 API](https://create.roblox.com/docs/cloud/reference/features/groups.md) 和 [成员过滤规则](https://create.roblox.com/docs/cloud/reference/patterns.md)。默认测试只用虚构响应；真实 API 测试需显式执行。

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from 'commander';
+import { GroupRoles, groupPlayerInput } from '../groups/roles.js';
 import password from '@inquirer/password';
 import { downloadAssetImage, parseAssetId } from '../assets/download.js';
 import { clearAssetCache } from '../cache/assets.js';
@@ -50,6 +51,61 @@ program.command('asset').description('Download original Roblox images')
     const result = await downloadAssetImage(new HttpClient({ apiKey: key, signal: abort.signal }), assetId, { output: options.output, signal: abort.signal });
     emit(result, json(), `Saved original image: ${result.path}\n${result.width}x${result.height} ${result.format}, ${result.bytes} bytes\nSHA-256: ${result.sha256}`);
   });
+
+const group = program.command('group').description('Query and manage group member roles');
+async function groupClient() {
+  const key = await new CredentialStore(store().home).get();
+  const http = new HttpClient({ apiKey: key, signal: abort.signal });
+  return { http, groups: new GroupRoles(http, await new RobloxApi(http, key).identity()) };
+}
+async function groupPlayers(options: { players?: string; playersFile?: string }, http: HttpClient) {
+  if (Boolean(options.players) === Boolean(options.playersFile)) throw new AppError('ARGUMENT_ERROR', 'Provide exactly one of --players or --players-file.');
+  let input = options.players!;
+  if (options.playersFile) {
+    try { input = (await readFile(resolve(options.playersFile), 'utf8')).trim().replace(/^\uFEFF/, ''); }
+    catch { throw new AppError('ARGUMENT_ERROR', 'Cannot read player list file.'); }
+  }
+  return resolvePlayers(groupPlayerInput(input), http);
+}
+group.command('roles <groupId>').description('List visible roles; account management permission remains unknown')
+  .action(async (groupId: string) => {
+    id(groupId);
+    const { groups } = await groupClient(), roles = await groups.roles(groupId);
+    emit({ groupId, roles }, json(), roles.map(role => `${role.id}\t${clean(role.name)}\trank=${role.rank ?? '?'}\tmanagement=unknown`).join('\n'));
+  });
+group.command('member <groupId>').description('Query complete member roles')
+  .option('--players <players>', 'Comma-separated usernames, saved aliases, User IDs or profile URLs')
+  .option('--players-file <path>', 'UTF-8 player list, one per line or comma-separated')
+  .action(async (groupId: string, options) => {
+    id(groupId);
+    const { groups, http } = await groupClient(), players = await groupPlayers(options, http), results = [];
+    for (const player of players) {
+      try { results.push({ ...player, status: 'success' as const, member: await groups.member(groupId, player.userId) }); }
+      catch (error) { results.push({ ...player, status: 'error' as const, error: errorInfo(error) }); if (abort.signal.aborted) break; }
+    }
+    emit({ groupId, results }, json(), results.map(row => `${row.userId}\t${clean(row.name)}\t${row.status === 'error' ? clean(row.error!.message) : row.member ? row.member.roles.join(', ') : 'not-member'}`).join('\n'),
+      results.filter(row => row.status === 'error').map(row => ({ code: row.error!.code, message: row.error!.message, resource: row.userId })));
+  });
+const groupRole = group.command('role').description('Add or remove one role, preserving other roles');
+for (const action of ['grant', 'revoke'] as const) {
+  groupRole.command(`${action} <groupId>`).description(`${action} a role for up to 100 players; verify each mutation`)
+    .option('--role <name>', 'Exact, case-sensitive role name')
+    .option('--role-id <id>', 'Role ID (not rank)')
+    .option('--players <players>', 'Comma-separated usernames, saved aliases, User IDs or profile URLs')
+    .option('--players-file <path>', 'UTF-8 player list, one per line or comma-separated')
+    .option('--dry-run', 'Resolve and query current state without changing roles; does not prove account write permission')
+    .action(async (groupId: string, options) => {
+      id(groupId);
+      if (Boolean(options.role) === Boolean(options.roleId)) throw new AppError('ARGUMENT_ERROR', 'Provide exactly one of --role or --role-id.');
+      if (options.roleId) id(options.roleId);
+      if (Boolean(options.players) === Boolean(options.playersFile)) throw new AppError('ARGUMENT_ERROR', 'Provide exactly one of --players or --players-file.');
+      const { groups, http } = await groupClient(), players = await groupPlayers(options, http);
+      const result = await groups.change(groupId, { name: options.role, id: options.roleId }, players.map(player => player.userId), action, Boolean(options.dryRun));
+      const warnings = result.results.filter(row => ['error', 'unverified', 'not-member'].includes(row.status)).map(row => ({ code: row.error?.code ?? 'NOT_MEMBER', message: row.error?.message ?? 'Player is not a group member.', resource: row.userId }));
+      if (result.skipped) warnings.push({ code: 'SKIPPED', message: `${result.skipped} players were not processed.`, resource: groupId });
+      emit({ ...result, players }, json(), result.results.map(row => `${row.userId}\t${row.status}${row.error ? `\t${clean(row.error.message)}` : ''}`).join('\n'), warnings);
+    });
+}
 
 const auth = program.command('auth').description('Configure and validate API credentials');
 auth.command('set').description('Validate and securely save a key (Windows DPAPI)')
