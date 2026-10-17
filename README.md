@@ -387,3 +387,48 @@ await groups.change('123', { id: '789' }, ['456'], 'revoke');
 ```
 
 接口仍为 Beta，参考 [Roblox 群组 API](https://create.roblox.com/docs/cloud/reference/features/groups.md) 和 [成员过滤规则](https://create.roblox.com/docs/cloud/reference/patterns.md)。默认测试只用虚构响应；真实 API 测试需显式执行。
+
+## 游戏标题与简介本地化
+
+`localization` 管理游戏详情页的标题和简介，支持游戏名称（从本地游戏目录精确匹配，忽略大小写）或 Universe ID。语言目录每次从 Roblox 获取，不写死语言数量；输出全部创作者语言及地区版本，区分游戏已启用语言、返回的译文和未返回的内容。需要有效 API Key，英文原文通过 Cloud Universe 接口读取，私有游戏也可查询。
+
+```sh
+rbx localization read "Example Game"
+rbx --json localization read 123
+rbx localization write "Example Game" --file ./translations.json --dry-run
+rbx --json localization write "Example Game" --file ./translations.json
+```
+
+写入文件是 UTF-8 JSON，按语言或地区代码组织，只填写需要修改的字段：
+
+```json
+{
+  "ja": { "title": "サンプルゲーム" },
+  "zh-hans": { "title": "示例游戏", "description": "示例游戏简介。" },
+  "fr-ca": { "title": "Jeu exemple" }
+}
+```
+
+可以一次提交全部译文，也可以只修正一个语言的标题。未提供的语言、标题或简介均保留。字段只支持 `title` 和 `description` 字符串，不接受 `null`、删除指令或 `read` 的完整 JSON 输出信封；读取结果需要先整理为上述编辑文件。源语言（例如 `en`）修改走 Cloud Universe 的字段掩码接口，可能需要额外的 `universe:write` 权限；其他译文、支持语言管理使用 `legacy-game-internationalization` 接口，最终由 Roblox 校验 Key 和资源权限。标题与简介分开提交，单批最多 25 个语言。
+
+语言代码与地区代码不同：`en` 是英文通用版本，`en-gb`/`en_gb` 是英国版本。英文、法文、葡萄牙文、西班牙文支持独立地区覆盖；其他地区代码输入会映射到对应语言通用版本，例如 `ja-jp` → `ja`。别名冲突会在写入前拒绝；源语言默认地区不能作为覆盖项（例如源语言是 `en` 时，使用 `en` 修改原文，不能用 `en-us` 覆盖）。额外返回的历史语言记录保留在 `translations` 中，不丢弃。
+
+写入时自动添加本次所需、尚未启用的支持语言，并回读确认；地区覆盖依附于对应语言组，例如写 `fr-ca` 时检查并按需添加 `fr`，不向支持语言接口添加 `Locale`（该接口会拒绝）。对新增语言明确关闭标题/简介自动翻译，不主动开启任何自动翻译。已有语言的自动翻译开关保持原样，手动译文优先展示。新增语言或其中一个字段失败会单独报告，其他字段继续处理；添加成功的语言不会因后续译文失败而自动移除。`--dry-run` 只读取、校验并预览字段和待添加语言，不添加语言、不写入、不生成备份，也不能证明写入权限。
+
+实际写入前，CLI 在应用数据目录的 `localization-backups/` 保存原始快照和请求，备份失败则不提交修改。SDK 可通过 `backupDirectory` 启用同样的备份。批量操作不是原子操作，不自动回滚；写入后最多回读 4 次，只重试读取、不重试修改。每个字段输出 `success`、`error`、`unverified`，预览时为 `planned`；出现失败或待确认项时，CLI 输出 warnings 并退出 3。`unverified` 表示无法确认，先读取检查，再决定是否重试。
+
+读取保留 `null` 与空字符串的区别；`null` 表示接口没有返回该项译文，不能由此断言玩家一定看到什么。地区项显示独立覆盖值，不推测自动翻译或回退后的最终展示。Roblox 将空手动译文视为使用原文的信号；若写入空字符串后接口仅返回 `null`，本工具保守报告 `unverified`。读取结果不将 `updateType` 当作翻译来源，不能据其判断手动/自动译文。参考 [Roblox 本地化说明](https://create.roblox.com/docs/production/localization) 和 [手动及地区翻译](https://create.roblox.com/docs/production/localization/add-translations)。
+
+SDK：
+
+```ts
+import { GameInfoLocalization, HttpClient } from '@hollower233/roblox-cloud-cli';
+const localization = new GameInfoLocalization(new HttpClient({ apiKey }));
+const snapshot = await localization.read('123');
+await localization.write('123', { ja: { title: 'サンプルゲーム' } }, {
+  backupDirectory: '/path/to/localization-backups',
+  dryRun: true,
+});
+```
+
+默认离线测试位于 `tests/localization.test.ts`。显式设置 `RBX_LIVE_LOCALIZATION_UNIVERSE` 后运行 `npm run test:live:localization`，仅验证真实读取与只读预览，不写游戏、不保存真实响应到仓库。

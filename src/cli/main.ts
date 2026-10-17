@@ -5,7 +5,8 @@ import password from '@inquirer/password';
 import { downloadAssetImage, parseAssetId } from '../assets/download.js';
 import { clearAssetCache } from '../cache/assets.js';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import { GameInfoLocalization, parseGameInfoTranslations } from '../localization/game-info.js';
 import { DataStoreEntries } from '../datastores/entries.js';
 import { copyProfiles, resolveProfilePlayers, resolveProfileUniverse } from '../profiles/copy.js';
 import { clearProfiles } from '../profiles/clear.js';
@@ -18,7 +19,7 @@ import { RobloxApi } from '../roblox/api.js';
 import { LocalStore, defaultHome } from '../storage/store.js';
 import { PlayerCatalogService, type SavedPlayer } from '../players/catalog.js';
 import { CatalogService, selectGames } from '../universes/catalog.js';
-import { emit, renderCatalog, renderIconPlan, localTime, remaining, clean } from './output.js';
+import { emit, renderCatalog, renderIconPlan, renderLocalization, localTime, remaining, clean } from './output.js';
 import { IconAssets, IconCountdown, type CountdownEvent, type CountdownOptions } from '../icons/countdown.js';
 import { parseTargetTime, requireDuration } from '../icons/frames.js';
 import type { Catalog, Warning } from '../universes/models.js';
@@ -106,6 +107,33 @@ for (const action of ['grant', 'revoke'] as const) {
       emit({ ...result, players }, json(), result.results.map(row => `${row.userId}\t${row.status}${row.error ? `\t${clean(row.error.message)}` : ''}`).join('\n'), warnings);
     });
 }
+
+const localization = program.command('localization').description('Read all game-info languages and write selected titles/descriptions');
+async function localizationClient(input: string) {
+  const local = store(), config = await local.config();
+  const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;
+  const universeId = resolveProfileUniverse(input, catalog?.games);
+  const key = await new CredentialStore(local.home).get();
+  return { local, universeId, client: new GameInfoLocalization(new HttpClient({ apiKey: key, signal: abort.signal })) };
+}
+localization.command('read <universe>').description('Read the complete Roblox creator language catalog and current game titles/descriptions')
+  .action(async (input: string) => {
+    const { universeId, client } = await localizationClient(input), result = await client.read(universeId);
+    emit(result, json(), renderLocalization(result));
+  });
+localization.command('write <universe>').description('Write selected game-info fields; add required supported languages and verify each field')
+  .requiredOption('--file <path>', 'UTF-8 JSON object keyed by language/locale; values contain title and/or description')
+  .option('--dry-run', 'Validate and preview fields/languages without submitting changes')
+  .action(async (input: string, options) => {
+    let value: unknown;
+    try { value = JSON.parse((await readFile(resolve(options.file), 'utf8')).replace(/^\uFEFF/, '')); }
+    catch { throw new AppError('ARGUMENT_ERROR', 'Cannot read translations file as UTF-8 JSON.'); }
+    const translations = parseGameInfoTranslations(value);
+    const { local, universeId, client } = await localizationClient(input);
+    const result = await client.write(universeId, translations, { dryRun: Boolean(options.dryRun), backupDirectory: join(local.home, 'localization-backups'), signal: abort.signal });
+    const warnings = result.results.filter(row => row.status === 'error' || row.status === 'unverified').map(row => ({ code: row.error?.code ?? 'UNVERIFIED', message: row.error?.message ?? 'Write not verified.', resource: `${row.languageCode}.${row.field}` }));
+    emit(result, json(), `${result.dryRun ? 'Preview' : 'Write'}: ${universeId}\n${result.results.map(row => `${row.languageCode}\t${row.field}\t${row.status}`).join('\n')}\n${result.dryRun ? 'Languages to add' : 'Languages added'}: ${result.addedLanguages.join(', ') || 'none'}${result.backupPath ? `\nBackup: ${result.backupPath}` : ''}`, warnings);
+  });
 
 const auth = program.command('auth').description('Configure and validate API credentials');
 auth.command('set').description('Validate and securely save a key (Windows DPAPI)')

@@ -1,4 +1,6 @@
 export { HttpClient } from './transport/http-client.js';
+export { GameInfoLocalization, parseGameInfoTranslations } from './localization/game-info.js';
+export type { GameInfoTranslation, GameInfoTranslations, GameInfoLocale, GameInfoLanguage, GameInfoSnapshot, GameInfoWriteOptions, GameInfoWriteResult } from './localization/game-info.js';
 export { GroupRoles, groupPlayerInput } from './groups/roles.js';
 export type { GroupRole, GroupMember, RoleSelector } from './groups/roles.js';
 export { UserRestrictions, banBody } from './moderation/restrictions.js';

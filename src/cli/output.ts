@@ -1,5 +1,28 @@
 import type { Catalog, Game, Warning } from '../universes/models.js';
 import type { CountdownNodeView } from '../icons/countdown.js';
+import type { GameInfoSnapshot } from '../localization/game-info.js';
+
+export function renderLocalization(snapshot: GameInfoSnapshot): string {
+  const text = (value: string | null) => value === null ? '[no translation returned]' : JSON.stringify(clean(value));
+  const known = new Set<string>();
+  const lines = [`Universe: ${snapshot.universeId}; source: ${snapshot.source.languageCode}`,
+    `${snapshot.languages.length} language families; ${snapshot.languages.reduce((sum, row) => sum + row.locales.length, 0)} locales`];
+  for (const language of snapshot.languages) {
+    known.add(language.languageCode);
+    lines.push(`${language.languageCode}\t${clean(language.name)}\t${language.enabled ? 'enabled' : 'not-enabled'}`,
+      `  Title: ${text(language.title)}`, `  Description: ${text(language.description)}`);
+    for (const locale of language.locales) {
+      known.add(locale.localeCode);
+      lines.push(locale.targetCode === locale.localeCode
+        ? `  ${locale.localeCode}: title=${text(locale.title)}; description=${text(locale.description)}`
+        : `  ${locale.localeCode}: uses ${locale.targetCode}`);
+    }
+  }
+  for (const extra of snapshot.translations.filter(row => !known.has(row.languageCode))) {
+    lines.push(`${extra.languageCode}\t[extra returned target]`, `  Title: ${text(extra.title)}`, `  Description: ${text(extra.description)}`);
+  }
+  return lines.join('\n');
+}
 
 export function clean(value: string): string { return value.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, ' '); }
 function width(value: string): number { return [...value].reduce((n, c) => n + (/\p{Mark}/u.test(c) ? 0 : c.codePointAt(0)! > 0xff ? 2 : 1), 0); }
