@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from 'commander';
+import { commandContext } from './context.js';
+import { registerConfigs } from './commands/configs.js';
+import { registerExperiments } from './commands/experiments.js';
 import { GroupRoles, groupPlayerInput } from '../groups/roles.js';
 import password from '@inquirer/password';
 import { downloadAssetImage, parseAssetId } from '../assets/download.js';
@@ -445,6 +448,10 @@ program.command('icon').description('Game icon tools')
       process.stdout.write(result.alreadyCompleted ? `该倒计时已完成（目标时刻 ${localTime(result.target)}）。\n` : `倒计时完成，目标时刻 ${localTime(result.target)}。原图标素材：${result.originalIconAssetId ?? '无'}${result.restore === 'restored' ? '（已恢复）' : result.restore === 'skipped' ? '（图标被他人修改，未恢复）' : ''}\n`);
     }
   });
+
+const cloudContext = commandContext(program, abort.signal);
+registerConfigs(program, cloudContext);
+registerExperiments(program, cloudContext);
 
 try { await program.parseAsync(process.argv); }
 catch (error) {

@@ -432,3 +432,96 @@ await localization.write('123', { ja: { title: 'サンプルゲーム' } }, {
 ```
 
 默认离线测试位于 `tests/localization.test.ts`。显式设置 `RBX_LIVE_LOCALIZATION_UNIVERSE` 后运行 `npm run test:live:localization`，仅验证真实读取与只读预览，不写游戏、不保存真实响应到仓库。
+
+## Configs 与 A/B 实验
+
+正式命令为 `rbx configs`、`rbx experiments`，支持 Universe ID 或本地游戏目录中的精确名称。读取需要目标游戏的 `universe:read`，修改还需要 `universe:write`。Configs API 为 Beta，Experiments API 为 Experimental；当前仅管理 `InExperienceConfig` 与游戏内配置实验，不管理 matchmaking 实验。
+
+命令注册位于 `src/cli/commands/`，共用 `src/cli/context.ts` 的凭证、游戏解析、JSON 输出和执行回执；SDK 复用相同业务模块。增加其他资源时可新增命令模块，不必把业务继续堆进 `main.ts`。本版本未加入任意 URL 调用器或跨接口自动发布流程。
+
+### Configs
+
+```sh
+rbx configs read "Example Game"
+rbx --json configs read 123 --full
+rbx configs draft read 123
+rbx configs draft set 123 --file ./configs.json --dry-run
+rbx configs draft set 123 --file ./configs.json
+rbx configs publish 123 --draft-hash "HASH_FROM_DRAFT" --message "Example change"
+rbx configs history 123 --limit 20 --skip 0
+rbx configs restore 123 REVISION_ID --dry-run
+rbx configs restore 123 REVISION_ID
+```
+
+`configs.json` 是纯键值对象，例：
+
+```json
+{
+  "exampleWaitSeconds": 0,
+  "exampleExperimentEnabled": false
+}
+```
+
+`draft set` 只 PATCH 文件提供的键，省略的键保留，`null` 表示删除该键。它自动读取当前草稿哈希并通过 `previousDraftHash` 防止覆盖并发编辑；也可用 `--draft-hash` 指定之前审阅的预期哈希。文件不要包含 CLI 的 `schemaVersion/status/data` 输出信封。支持布尔、数字、字符串及 JSON 值，具体产品值限制仍由 Roblox 校验。
+
+草稿修改不会直接上线。`publish` 要求显式传入已经审阅的草稿哈希，发布的是**整个草稿的全部变更**，包括其他工具已暂存的内容。发布前会检查哈希；不一致时拒绝操作，不自动读取新哈希后强行发布。`--strategy Immediate` 为默认即时发布，`--strategy GradualRollout` 为 15 分钟渐进发布。`restore` 会替换当前草稿，**只暂存历史恢复，不自动发布**；确认返回的新 `draftHash` 后再运行 `publish`。
+
+CLI 在真实写入前将已发布值、当前草稿和请求保存到应用数据目录的 `config-backups/`；备份失败不提交修改。SDK 通过 `backupDirectory` 启用备份。`--dry-run` 只读取、校验和显示请求，不写入或备份，也不能证明写权限。
+
+### 实验
+
+```sh
+rbx experiments list 123 --limit 20 --skip 0
+rbx experiments get 123 EXPERIMENT_ID
+rbx experiments create 123 --file ./experiment.json --dry-run
+rbx experiments create 123 --file ./experiment.json
+rbx experiments update 123 EXPERIMENT_ID --file ./experiment.json --dry-run
+rbx experiments start 123 EXPERIMENT_ID
+rbx experiments schedule 123 EXPERIMENT_ID --at "2099-10-25T18:00:00+08:00"
+rbx experiments stats 123 EXPERIMENT_ID
+rbx experiments complete 123 EXPERIMENT_ID --variant VARIANT_ID --dry-run
+rbx experiments complete 123 EXPERIMENT_ID --no-winner
+rbx experiments operation 123 OPERATION_ID
+```
+
+`experiment.json` 的完整示例在 `tests/fixtures/config-experiment.json`，使用虚构键 `exampleWaitSeconds`，A/B 权重各 50%，曝光比例 100%，周期 14 天，目标为次日留存。基线组**引用当前已发布的值**，不填写 `entryValue`；处理组通过 `entryValue` 提供实验值。因此要做 0 对 8 秒实验，先将该键的基线值发布为 0，再创建 B 组值为 8 的实验。创建命令只创建草稿，不自动启动、不发布启用开关。
+
+输入须提供完整可修改字段，包括 `name`、`experimentConfiguration`、`exposurePercent`、`durationSeconds`、`universeGoalMetric`；可选 `description`。`update` 是**完整替换可修改字段**，不能只传一个修改项。当前校验 14–60 天、一个基线加 1–2 个处理组、同一配置键、不同标签、权重合计 100%。文件格式见 [官方实验指南](https://create.roblox.com/docs/cloud/guides/experiments)。运行或排程后的实验配置由 Roblox 限制修改。
+
+`complete` 必须显式二选一：`--variant` 传的是 API 返回的 `variantMeta.variantId`，不是 A/B 标签，选中变体会发布其配置值；`--no-winner` 不选择赢家，恢复之前的配置值。命令不会自动改变你自己的其他启用开关。`stats` 是异步诊断统计，官方可能需要至少 24 小时的实验数据，不能将它当作完整留存或收益分析报告。
+
+实验变更默认等待异步操作完成，最多轮询 60 秒。可用 `--no-wait` 立即返回操作 ID，或 `--timeout 120` 调整等待秒数（CLI 最多 3600）。超时返回 `pending`，操作可能继续在云端执行；用 `operation` 查询或继续等待，**不要重新创建实验**。实验及变体 ID 始终作为字符串处理，支持超出 JavaScript 安全整数范围的 ID。CLI 写前备份保存到 `experiment-backups/`；SDK 可选 `backupDirectory`。
+
+### 回执、SDK 与验证
+
+输出沿用 `--json`、统一错误和退出码。写回执的 `state`：
+
+| 状态 | 含义 |
+| --- | --- |
+| `planned` | 预览，未提交 |
+| `verified` | 草稿回读哈希一致，或实验异步操作已完成且未返回错误 |
+| `submitted` | Configs 发布接口已返回配置版本，并附上读取到的值；不保证全部在线服务器已刷新 |
+| `pending` | 已取得操作 ID，等待时间内尚未完成 |
+| `unverified` | 写入响应丢失、回读失败、并发覆盖或操作失败，需检查回执 |
+
+`pending` 和 `unverified` 产生 warnings，CLI 退出 3。响应丢失时可能没有操作 ID，此时先通过实验列表/详情或配置草稿/历史核对结果。写操作不会自动重试，已知 HTTP 拒绝仍报正常错误；异步失败的结构化错误保留在 `response.error`。本地备份只供人工恢复和诊断，不承诺多个 API 的事务回滚。
+
+```ts
+import { ConfigRepository, Experiments, HttpClient } from '@hollower233/roblox-cloud-cli';
+const http = new HttpClient({ apiKey });
+const configs = new ConfigRepository(http);
+const staged = await configs.setDraft('123', { exampleWaitSeconds: 0 }, {
+  backupDirectory: '/path/to/config-backups',
+});
+// 审阅 staged.readback 与哈希后，另行调用 publish。
+const experiments = new Experiments(http);
+const receipt = await experiments.start('123', 'EXPERIMENT_ID', { wait: false });
+if (receipt.operationId) {
+  const operation = await experiments.getOperation('123', receipt.operationId);
+  await experiments.wait('123', operation, { timeoutMs: 60000 });
+}
+```
+
+离线验证：`tests/configs.test.ts`、`tests/experiments.test.ts`、`tests/cloud-cli.test.ts`。显式设置 `RBX_LIVE_CLOUD_UNIVERSE` 后运行 `npm run test:live:cloud`；可选 `RBX_LIVE_CLOUD_EXPERIMENT` 追加实验详情验证。该冒烟脚本只发 GET，不启动实验、不发布配置、不把真实响应保存到仓库。
+
+接口参考：[Configs](https://create.roblox.com/docs/cloud/reference/features/configs)、[Experiments](https://create.roblox.com/docs/cloud/reference/features/experiments)。

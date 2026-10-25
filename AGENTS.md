@@ -86,3 +86,11 @@
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/localization.test.ts`；真实只读验证：`scripts/localization-smoke.ts`。
 - 本地备份：应用数据目录下的 `localization-backups/`；使用文档：`README.md`。
+
+## Configs 与 A/B 实验
+
+- 配置草稿、发布与历史恢复：`src/configs/repository.ts`；实验及异步操作：`src/experiments/experiments.ts`。
+- 公共请求回执与备份：`src/cloud/common.ts`；命令上下文：`src/cli/context.ts`；命令注册：`src/cli/commands/`。
+- CLI：`configs`、`experiments`；SDK 导出：`src/index.ts`。仅管理 InExperienceConfig 和游戏内配置实验。
+- 离线验证：`tests/configs.test.ts`、`tests/experiments.test.ts`、`tests/cloud-cli.test.ts`；显式真实只读验证：`scripts/cloud-management-smoke.ts`。
+- 本地备份：应用数据目录下的 `config-backups/`、`experiment-backups/`。发布必须提供审阅的草稿哈希；异步未完成保留操作 ID，不重试写入。

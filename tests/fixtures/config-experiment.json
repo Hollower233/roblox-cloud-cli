@@ -1,0 +1,22 @@
+{
+  "name": "Example wait time",
+  "description": "Fictional offline example: published baseline versus 8 seconds.",
+  "exposurePercent": 100,
+  "durationSeconds": 1209600,
+  "universeGoalMetric": "UNIVERSE_EXPERIMENT_METRIC_DAY_1_RETENTION",
+  "experimentConfiguration": {
+    "productType": "EXPERIMENT_PRODUCT_TYPE_IN_GAME_CONFIGS",
+    "inGameConfigExperimentConfiguration": {
+      "variants": [
+        {
+          "variantMeta": { "label": "A", "isBaseline": true, "weight": 50 },
+          "configEntry": { "key": "exampleWaitSeconds" }
+        },
+        {
+          "variantMeta": { "label": "B", "isBaseline": false, "weight": 50 },
+          "configEntry": { "key": "exampleWaitSeconds", "entryValue": 8 }
+        }
+      ]
+    }
+  }
+}

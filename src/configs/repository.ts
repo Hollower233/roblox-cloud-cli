@@ -1,0 +1,84 @@
+import { isDeepStrictEqual } from 'node:util';
+import { AppError, errorInfo, id } from '../core/errors.js';
+import { HttpClient } from '../transport/http-client.js';
+import { backup, nonempty, object, pageNumber, resourceToken, uncertain, type JsonObject, type WriteOptions, type WriteReceipt, type CloudRequest } from '../cloud/common.js';
+
+export type ConfigEntries = Record<string, unknown>;
+export type DeploymentStrategy = 'Immediate' | 'GradualRollout';
+export function parseConfigEntries(value: unknown): ConfigEntries {
+  const entries = object(value);
+  if (Object.hasOwn(entries, 'schemaVersion') && Object.hasOwn(entries, 'status') && Object.hasOwn(entries, 'data')) throw new AppError('ARGUMENT_ERROR', 'Provide config keys and values, not a CLI output envelope.');
+  if (!Object.keys(entries).length || Object.keys(entries).length > 100) throw new AppError('ARGUMENT_ERROR', 'Provide 1–100 config entries.');
+  for (const key of Object.keys(entries)) {
+    if (!key || key.length > 256 || ['__proto__', 'constructor', 'prototype'].includes(key)) throw new AppError('ARGUMENT_ERROR', 'Invalid config key.');
+  }
+  // Reject values JSON would silently drop or alter for SDK callers.
+  function check(v: unknown): void {
+    if (v === null || typeof v === 'string' || typeof v === 'boolean' || typeof v === 'number' && Number.isFinite(v)) return;
+    if (Array.isArray(v)) { for (const item of v) check(item); return; }
+    if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) { for (const item of Object.values(v)) check(item); return; }
+    throw new AppError('ARGUMENT_ERROR', 'Config values must be JSON values.');
+  }
+  try { check(entries); } catch (error) { if (error instanceof AppError) throw error; throw new AppError('ARGUMENT_ERROR', 'Config values must not contain cycles.'); }
+  return entries;
+}
+
+/** In-experience Configs only. Other repository products have different semantics. */
+export class ConfigRepository {
+  constructor(private http: HttpClient) {}
+  private base(universeId: string): string {
+    return `https://apis.roblox.com/creator-configs-public-api/v1/configs/universes/${id(universeId)}/repositories/InExperienceConfig`;
+  }
+  private async get(url: string): Promise<JsonObject> { return object(await this.http.request(url, { auth: true }), true); }
+  read(universeId: string, full = false): Promise<JsonObject> { return this.get(this.base(universeId) + (full ? '/full' : '')); }
+  draft(universeId: string): Promise<JsonObject> { return this.get(this.base(universeId) + '/draft'); }
+  history(universeId: string, options: { limit?: number; skip?: number } = {}): Promise<JsonObject> {
+    const url = new URL(this.base(universeId) + '/revisions');
+    url.searchParams.set('MaxPageSize', String(pageNumber(options.limit ?? 20, 1)));
+    url.searchParams.set('Skip', String(pageNumber(options.skip ?? 0)));
+    return this.get(url.href);
+  }
+  private async write(universeId: string, request: CloudRequest, options: WriteOptions, verifyDraft: boolean): Promise<WriteReceipt> {
+    const before = { published: await this.read(universeId), draft: await this.draft(universeId) };
+    const expected = request.body?.previousDraftHash ?? request.body?.draftHash;
+    if (expected !== undefined && expected !== before.draft.draftHash) throw new AppError('ARGUMENT_ERROR', 'Draft hash changed; read and review the current draft before retrying.');
+    const receipt: WriteReceipt = { universeId, request, state: 'planned' };
+    if (options.dryRun) return { ...receipt, readback: before };
+    receipt.backupPath = await backup(options.backupDirectory, universeId, request, before);
+    let response: JsonObject;
+    try {
+      response = object(await this.http.request(request.url, { auth: true, method: request.method, body: request.body }), true);
+      if (verifyDraft) nonempty(response.draftHash, true);
+      else if (!Number.isSafeInteger(response.configVersion) || Number(response.configVersion) < 0) throw new AppError('INVALID_RESPONSE', 'Missing published config version.');
+    } catch (error) {
+      if (!uncertain(error)) throw error;
+      return { ...receipt, state: 'unverified', error: errorInfo(error) };
+    }
+    receipt.response = response;
+    receipt.state = 'submitted';
+    try {
+      receipt.readback = verifyDraft ? await this.draft(universeId) : await this.read(universeId);
+      // A matching hash confirms the staged revision. A publish read may still show
+      // the previous version during rollout, so it is deliberately only submitted.
+      if (verifyDraft) receipt.state = isDeepStrictEqual(receipt.readback.draftHash, response.draftHash) ? 'verified' : 'unverified';
+    } catch (error) { receipt.state = 'unverified'; receipt.error = errorInfo(error); }
+    return receipt;
+  }
+  async setDraft(universeId: string, value: unknown, options: WriteOptions & { previousDraftHash?: string } = {}): Promise<WriteReceipt> {
+    const entries = parseConfigEntries(value), url = this.base(universeId) + '/draft';
+    // Read immediately before patching for optimistic concurrency. An explicit
+    // expected hash can also guard changes prepared earlier by a caller.
+    const current = await this.draft(universeId);
+    const previousDraftHash = options.previousDraftHash === undefined ? nonempty(current.draftHash, true) : nonempty(options.previousDraftHash);
+    return this.write(universeId, { url, method: 'PATCH', body: { entries, previousDraftHash } }, options, true);
+  }
+  publish(universeId: string, draftHash: string, options: WriteOptions & { message?: string; strategy?: DeploymentStrategy } = {}): Promise<WriteReceipt> {
+    nonempty(draftHash);
+    const strategy = options.strategy ?? 'Immediate';
+    if (!['Immediate', 'GradualRollout'].includes(strategy)) throw new AppError('ARGUMENT_ERROR', 'Invalid deployment strategy.');
+    return this.write(universeId, { url: this.base(universeId) + '/publish', method: 'POST', body: { draftHash, message: options.message ?? '', deploymentStrategy: strategy } }, options, false);
+  }
+  restore(universeId: string, revisionId: string, options: WriteOptions = {}): Promise<WriteReceipt> {
+    return this.write(universeId, { url: this.base(universeId) + `/revisions/${resourceToken(revisionId)}/restore`, method: 'POST' }, options, true);
+  }
+}

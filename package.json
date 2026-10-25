@@ -15,6 +15,7 @@
     "test": "tsx --test tests/*.test.ts",
     "test:live": "tsx scripts/live-smoke.ts",
     "test:live:localization": "tsx scripts/localization-smoke.ts",
+    "test:live:cloud": "tsx scripts/cloud-management-smoke.ts",
     "dev": "tsx src/cli/main.ts"
   },
   "dependencies": { "@inquirer/password": "5.2.2", "commander": "15.0.0" },

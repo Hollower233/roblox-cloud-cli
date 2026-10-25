@@ -1,4 +1,9 @@
 export { HttpClient } from './transport/http-client.js';
+export { ConfigRepository, parseConfigEntries } from './configs/repository.js';
+export type { ConfigEntries, DeploymentStrategy } from './configs/repository.js';
+export { Experiments, parseExperimentDefinition } from './experiments/experiments.js';
+export type { ExperimentDefinition, ExperimentVariant, ExperimentOperation, ExperimentWriteOptions, ExperimentWaitOptions } from './experiments/experiments.js';
+export type { WriteOptions, WriteReceipt, CloudRequest, JsonObject } from './cloud/common.js';
 export { GameInfoLocalization, parseGameInfoTranslations } from './localization/game-info.js';
 export type { GameInfoTranslation, GameInfoTranslations, GameInfoLocale, GameInfoLanguage, GameInfoSnapshot, GameInfoWriteOptions, GameInfoWriteResult } from './localization/game-info.js';
 export { GroupRoles, groupPlayerInput } from './groups/roles.js';
