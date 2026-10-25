@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { ConfigRepository, parseConfigEntries } from '../src/configs/repository.js';
 import { HttpClient } from '../src/transport/http-client.js';
 
-function fixture(options: { lost?: boolean; conflict?: boolean; failedReadback?: boolean; missingHash?: boolean; denied?: boolean; noDraft?: boolean; readStatus?: number; publishedStatus?: number; appears?: boolean } = {}) {
+function fixture(options: { lost?: boolean; conflict?: boolean; failedReadback?: boolean; missingHash?: boolean; denied?: boolean; noDraft?: boolean; readStatus?: number; publishedStatus?: number; universeStatus?: number; appears?: boolean } = {}) {
   const calls: { url: URL; method: string; body: any }[] = [];
   let hash = 'draft-old', draft: Record<string, unknown> = { untouched: true }, wrote = false;
   let draftReads = 0;
@@ -15,6 +15,8 @@ function fixture(options: { lost?: boolean; conflict?: boolean; failedReadback?:
     calls.push({ url, method, body });
     assert.equal(new Headers(init?.headers).get('x-api-key'), 'fictional-key');
     assert.equal(url.host, 'apis.roblox.com');
+    if (url.pathname === '/cloud/v2/universes/1') return options.universeStatus
+      ? new Response(null, { status: options.universeStatus }) : Response.json({ displayName: 'Example Game', visibility: 'PRIVATE' });
     assert.ok(url.pathname.startsWith('/creator-configs-public-api/v1/configs/universes/1/repositories/InExperienceConfig'));
     if (method === 'GET') {
       if (options.failedReadback && wrote) return new Response(null, { status: 503 });
@@ -24,7 +26,8 @@ function fixture(options: { lost?: boolean; conflict?: boolean; failedReadback?:
         if (options.noDraft && !wrote && !(options.appears && draftReads > 1)) return new Response(null, { status: 404 });
         return Response.json({ draftHash: options.conflict && wrote ? 'other-writer' : hash, entries: draft });
       }
-      if (url.pathname.endsWith('/revisions')) return Response.json({ revisions: [{ revisionId: 'rev-old', version: 1 }] });
+      if (url.pathname.endsWith('/revisions')) return options.publishedStatus === 404
+        ? new Response(null, { status: 404 }) : Response.json({ revisions: [{ revisionId: 'rev-old', version: 1 }] });
       if (options.publishedStatus) return new Response(null, { status: options.publishedStatus });
       return Response.json({ entries: { untouched: true, waitSeconds: 0 }, metadata: { version: 1 } });
     }
@@ -88,12 +91,34 @@ test('a draft appearing during creation preflight is preserved', async () => {
   await assert.rejects(() => client.setDraft('1', { waitSeconds: 8 }), /draft appeared/);
   assert.ok(calls.every(row => row.method === 'GET'));
 });
-test('draft absence never masks missing repositories, authorization failures or outages', async () => {
+test('draft absence never masks inaccessible universes, authorization failures or outages', async () => {
   for (const status of [401, 403, 500]) {
     await assert.rejects(() => fixture({ readStatus: status }).client.draft('1'), { httpStatus: status });
   }
   for (const status of [403, 404]) {
-    await assert.rejects(() => fixture({ noDraft: true, publishedStatus: status }).client.draft('1'), { httpStatus: status });
+    await assert.rejects(() => fixture({ noDraft: true, publishedStatus: status, universeStatus: status }).client.draft('1'), { httpStatus: status });
+  }
+});
+test('uninitialized repository can be read, previewed and initialized through a partial draft', async () => {
+  const { client, calls } = fixture({ noDraft: true, publishedStatus: 404 });
+  for (const full of [false, true]) {
+    const published = await client.read('1', full);
+    assert.equal(published.exists, false); assert.deepEqual(published.entries, {});
+  }
+  assert.equal((await client.draft('1')).exists, false);
+  assert.deepEqual(await client.history('1'), { exists: false, revisions: [] });
+  assert.ok(calls.some(row => row.url.pathname === '/cloud/v2/universes/1'));
+  const preview = await client.setDraft('1', { exampleEnabled: false }, { dryRun: true });
+  assert.equal(preview.state, 'planned'); assert.ok(calls.every(row => row.method === 'GET'));
+  const result = await client.setDraft('1', { exampleEnabled: false });
+  assert.equal(result.state, 'verified'); assert.equal(result.readback?.exists, true);
+  assert.equal(calls.filter(row => row.method === 'PATCH').length, 1);
+});
+test('missing repository is not accepted when universe metadata cannot verify access', async () => {
+  for (const status of [401, 403, 404, 500]) {
+    const { client, calls } = fixture({ noDraft: true, publishedStatus: 404, universeStatus: status });
+    await assert.rejects(() => client.setDraft('1', { exampleEnabled: false }), { httpStatus: status });
+    assert.ok(calls.every(row => row.method === 'GET'));
   }
 });
 test('configs dry-run never writes or creates backups', async () => {
@@ -147,6 +172,6 @@ test('invalid JSON values, key names and resource IDs are rejected locally', asy
   for (const input of [[], {}, { a: undefined }, { a: NaN }, { a: new Date() }, { schemaVersion: 1, status: 'success', data: {} }, JSON.parse('{"__proto__":true}')]) assert.throws(() => parseConfigEntries(input));
   await assert.rejects(() => client.setDraft('1', {}));
   assert.throws(() => client.restore('1', '../other'));
-  assert.throws(() => client.read('0'));
+  await assert.rejects(() => client.read('0'));
   assert.equal(calls.length, 0);
 });

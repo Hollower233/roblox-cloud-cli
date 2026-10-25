@@ -30,13 +30,28 @@ export class ConfigRepository {
     return `https://apis.roblox.com/creator-configs-public-api/v1/configs/universes/${id(universeId)}/repositories/InExperienceConfig`;
   }
   private async get(url: string): Promise<JsonObject> { return object(await this.http.request(url, { auth: true }), true); }
-  read(universeId: string, full = false): Promise<JsonObject> { return this.get(this.base(universeId) + (full ? '/full' : '')); }
+  async read(universeId: string, full = false): Promise<JsonObject> {
+    try { return { ...await this.get(this.base(universeId) + (full ? '/full' : '')), exists: true }; }
+    catch (error) {
+      if (!(error instanceof AppError) || error.httpStatus !== 404) throw error;
+      if (full) {
+        const values = await this.read(universeId);
+        if (values.exists === false) return values;
+        throw error;
+      }
+      // A new experience may have neither a repository nor a draft yet. Verify
+      // access to the universe through an independent official read endpoint.
+      // Never infer an empty repository just from a Configs 404.
+      const universe = object(await this.http.request(`https://apis.roblox.com/cloud/v2/universes/${id(universeId)}`, { auth: true }), true);
+      if (typeof universe.displayName !== 'string') throw new AppError('INVALID_RESPONSE', 'Invalid universe metadata response.');
+      return { exists: false, entries: {}, metadata: null, conditionalRules: null };
+    }
+  }
   async draft(universeId: string): Promise<JsonObject> {
     try { return { ...await this.get(this.base(universeId) + '/draft'), exists: true }; }
     catch (error) {
       if (!(error instanceof AppError) || error.httpStatus !== 404) throw error;
-      // Do not turn a missing/inaccessible universe or repository into an empty
-      // draft. A successful published read confirms that only the draft is absent.
+      // Published read also verifies universe access when its repository is new.
       await this.read(universeId);
       return { exists: false, draftHash: null, entries: {} };
     }
@@ -45,7 +60,10 @@ export class ConfigRepository {
     const url = new URL(this.base(universeId) + '/revisions');
     url.searchParams.set('MaxPageSize', String(pageNumber(options.limit ?? 20, 1)));
     url.searchParams.set('Skip', String(pageNumber(options.skip ?? 0)));
-    return this.get(url.href);
+    return this.get(url.href).catch(async error => {
+      if (error instanceof AppError && error.httpStatus === 404 && (await this.read(universeId)).exists === false) return { exists: false, revisions: [] };
+      throw error;
+    });
   }
   private async write(universeId: string, request: CloudRequest, options: WriteOptions, verifyDraft: boolean, creatingDraft = false): Promise<WriteReceipt> {
     const before = { published: await this.read(universeId), draft: await this.draft(universeId) };
