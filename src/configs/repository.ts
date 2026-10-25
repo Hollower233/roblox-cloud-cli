@@ -31,15 +31,26 @@ export class ConfigRepository {
   }
   private async get(url: string): Promise<JsonObject> { return object(await this.http.request(url, { auth: true }), true); }
   read(universeId: string, full = false): Promise<JsonObject> { return this.get(this.base(universeId) + (full ? '/full' : '')); }
-  draft(universeId: string): Promise<JsonObject> { return this.get(this.base(universeId) + '/draft'); }
+  async draft(universeId: string): Promise<JsonObject> {
+    try { return { ...await this.get(this.base(universeId) + '/draft'), exists: true }; }
+    catch (error) {
+      if (!(error instanceof AppError) || error.httpStatus !== 404) throw error;
+      // Do not turn a missing/inaccessible universe or repository into an empty
+      // draft. A successful published read confirms that only the draft is absent.
+      await this.read(universeId);
+      return { exists: false, draftHash: null, entries: {} };
+    }
+  }
   history(universeId: string, options: { limit?: number; skip?: number } = {}): Promise<JsonObject> {
     const url = new URL(this.base(universeId) + '/revisions');
     url.searchParams.set('MaxPageSize', String(pageNumber(options.limit ?? 20, 1)));
     url.searchParams.set('Skip', String(pageNumber(options.skip ?? 0)));
     return this.get(url.href);
   }
-  private async write(universeId: string, request: CloudRequest, options: WriteOptions, verifyDraft: boolean): Promise<WriteReceipt> {
+  private async write(universeId: string, request: CloudRequest, options: WriteOptions, verifyDraft: boolean, creatingDraft = false): Promise<WriteReceipt> {
     const before = { published: await this.read(universeId), draft: await this.draft(universeId) };
+    if (creatingDraft && before.draft.exists !== false) throw new AppError('ARGUMENT_ERROR', 'A draft appeared; read and review it before retrying.');
+    if (request.url.endsWith('/publish') && before.draft.exists === false) throw new AppError('ARGUMENT_ERROR', 'No draft to publish. Stage changes first.');
     const expected = request.body?.previousDraftHash ?? request.body?.draftHash;
     if (expected !== undefined && expected !== before.draft.draftHash) throw new AppError('ARGUMENT_ERROR', 'Draft hash changed; read and review the current draft before retrying.');
     const receipt: WriteReceipt = { universeId, request, state: 'planned' };
@@ -69,8 +80,10 @@ export class ConfigRepository {
     // Read immediately before patching for optimistic concurrency. An explicit
     // expected hash can also guard changes prepared earlier by a caller.
     const current = await this.draft(universeId);
-    const previousDraftHash = options.previousDraftHash === undefined ? nonempty(current.draftHash, true) : nonempty(options.previousDraftHash);
-    return this.write(universeId, { url, method: 'PATCH', body: { entries, previousDraftHash } }, options, true);
+    const creatingDraft = current.exists === false;
+    const previousDraftHash = options.previousDraftHash !== undefined ? nonempty(options.previousDraftHash)
+      : creatingDraft ? undefined : nonempty(current.draftHash, true);
+    return this.write(universeId, { url, method: 'PATCH', body: { entries, ...(previousDraftHash === undefined ? {} : { previousDraftHash }) } }, options, true, creatingDraft);
   }
   publish(universeId: string, draftHash: string, options: WriteOptions & { message?: string; strategy?: DeploymentStrategy } = {}): Promise<WriteReceipt> {
     nonempty(draftHash);

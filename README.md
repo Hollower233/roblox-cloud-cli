@@ -462,7 +462,9 @@ rbx configs restore 123 REVISION_ID
 }
 ```
 
-`draft set` 只 PATCH 文件提供的键，省略的键保留，`null` 表示删除该键。它自动读取当前草稿哈希并通过 `previousDraftHash` 防止覆盖并发编辑；也可用 `--draft-hash` 指定之前审阅的预期哈希。文件不要包含 CLI 的 `schemaVersion/status/data` 输出信封。支持布尔、数字、字符串及 JSON 值，具体产品值限制仍由 Roblox 校验。
+`draft set` 只 PATCH 文件提供的键，省略的键保留，`null` 表示删除该键。已有草稿时自动读取当前草稿哈希并通过 `previousDraftHash` 防止覆盖并发编辑；也可用 `--draft-hash` 指定之前审阅的预期哈希。文件不要包含 CLI 的 `schemaVersion/status/data` 输出信封。支持布尔、数字、字符串及 JSON 值，具体产品值限制仍由 Roblox 校验。
+
+发布后草稿会清空。草稿接口返回 404 时，CLI 会再确认已发布配置可以读取，才返回 `exists: false`、`draftHash: null`、`entries: {}`；已有草稿返回 `exists: true`。无草稿时允许 `draft set` 首次创建（不发送旧哈希），也允许 `restore` 暂存历史恢复；`publish` 则提示先暂存变更。不会把 401、403、服务错误或已发布仓库也无法读取的情况吞成空草稿。首次创建缺少可用的旧哈希，客户端会在写前再次检查是否出现草稿；这项检查不构成服务器端原子的“仅在不存在时创建”保证。
 
 草稿修改不会直接上线。`publish` 要求显式传入已经审阅的草稿哈希，发布的是**整个草稿的全部变更**，包括其他工具已暂存的内容。发布前会检查哈希；不一致时拒绝操作，不自动读取新哈希后强行发布。`--strategy Immediate` 为默认即时发布，`--strategy GradualRollout` 为 15 分钟渐进发布。`restore` 会替换当前草稿，**只暂存历史恢复，不自动发布**；确认返回的新 `draftHash` 后再运行 `publish`。
 

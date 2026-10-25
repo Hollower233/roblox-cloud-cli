@@ -6,9 +6,10 @@ import { tmpdir } from 'node:os';
 import { ConfigRepository, parseConfigEntries } from '../src/configs/repository.js';
 import { HttpClient } from '../src/transport/http-client.js';
 
-function fixture(options: { lost?: boolean; conflict?: boolean; failedReadback?: boolean; missingHash?: boolean; denied?: boolean } = {}) {
+function fixture(options: { lost?: boolean; conflict?: boolean; failedReadback?: boolean; missingHash?: boolean; denied?: boolean; noDraft?: boolean; readStatus?: number; publishedStatus?: number; appears?: boolean } = {}) {
   const calls: { url: URL; method: string; body: any }[] = [];
   let hash = 'draft-old', draft: Record<string, unknown> = { untouched: true }, wrote = false;
+  let draftReads = 0;
   const client = new ConfigRepository(new HttpClient({ apiKey: 'fictional-key', retries: 0, intervalMs: 0, fetch: (async (input, init) => {
     const url = new URL(String(input)), method = init?.method ?? 'GET', body = init?.body === undefined ? undefined : JSON.parse(String(init.body));
     calls.push({ url, method, body });
@@ -17,15 +18,23 @@ function fixture(options: { lost?: boolean; conflict?: boolean; failedReadback?:
     assert.ok(url.pathname.startsWith('/creator-configs-public-api/v1/configs/universes/1/repositories/InExperienceConfig'));
     if (method === 'GET') {
       if (options.failedReadback && wrote) return new Response(null, { status: 503 });
-      if (url.pathname.endsWith('/draft')) return Response.json({ draftHash: options.conflict && wrote ? 'other-writer' : hash, entries: draft });
+      if (url.pathname.endsWith('/draft')) {
+        draftReads++;
+        if (options.readStatus) return new Response(null, { status: options.readStatus });
+        if (options.noDraft && !wrote && !(options.appears && draftReads > 1)) return new Response(null, { status: 404 });
+        return Response.json({ draftHash: options.conflict && wrote ? 'other-writer' : hash, entries: draft });
+      }
       if (url.pathname.endsWith('/revisions')) return Response.json({ revisions: [{ revisionId: 'rev-old', version: 1 }] });
+      if (options.publishedStatus) return new Response(null, { status: options.publishedStatus });
       return Response.json({ entries: { untouched: true, waitSeconds: 0 }, metadata: { version: 1 } });
     }
     if (options.denied) return new Response(null, { status: 403 });
     wrote = true;
     if (options.lost) throw new Error('Lost response');
     if (url.pathname.endsWith('/draft')) {
-      assert.equal(method, 'PATCH'); assert.equal(body.previousDraftHash, hash);
+      assert.equal(method, 'PATCH');
+      if (options.noDraft) assert.equal(Object.hasOwn(body, 'previousDraftHash'), false);
+      else assert.equal(body.previousDraftHash, hash);
       draft = { ...draft, ...body.entries }; hash = 'draft-new';
     } else if (url.pathname.endsWith('/publish')) {
       assert.equal(body.draftHash, hash); return Response.json({ configVersion: 2 });
@@ -51,6 +60,41 @@ test('configs partial staging preserves omitted keys, null deletion and nested J
     assert.deepEqual(write.body.entries, { waitSeconds: 8, obsolete: null, nested: { values: [false, 1] } });
     assert.equal(calls.filter(row => row.method !== 'GET').length, 1);
   } finally { await rm(home, { recursive: true, force: true }); }
+});
+test('missing draft is explicit, first staging omits old hash and verifies new draft', async () => {
+  const { client, calls } = fixture({ noDraft: true });
+  assert.deepEqual(await client.draft('1'), { exists: false, draftHash: null, entries: {} });
+  const result = await client.setDraft('1', { waitSeconds: 8 });
+  assert.equal(result.state, 'verified'); assert.equal(result.readback?.exists, true);
+  assert.equal(result.response?.draftHash, 'draft-new');
+  assert.equal(calls.filter(row => row.method === 'PATCH').length, 1);
+});
+test('missing draft preview is read-only and restore can stage a historical revision', async () => {
+  const { client, calls } = fixture({ noDraft: true });
+  const preview = await client.setDraft('1', { waitSeconds: 8 }, { dryRun: true });
+  assert.equal(preview.state, 'planned'); assert.equal(Object.hasOwn(preview.request.body!, 'previousDraftHash'), false);
+  assert.ok(calls.every(row => row.method === 'GET'));
+  assert.equal((await client.restore('1', 'rev-old')).state, 'verified');
+  assert.equal(calls.filter(row => row.method === 'POST').length, 1);
+});
+test('publish and stale explicit hashes do not invent a missing draft', async () => {
+  const { client, calls } = fixture({ noDraft: true });
+  await assert.rejects(() => client.publish('1', 'old-hash'), /No draft to publish/);
+  await assert.rejects(() => client.setDraft('1', { waitSeconds: 8 }, { previousDraftHash: 'old-hash' }), /hash changed/);
+  assert.ok(calls.every(row => row.method === 'GET'));
+});
+test('a draft appearing during creation preflight is preserved', async () => {
+  const { client, calls } = fixture({ noDraft: true, appears: true });
+  await assert.rejects(() => client.setDraft('1', { waitSeconds: 8 }), /draft appeared/);
+  assert.ok(calls.every(row => row.method === 'GET'));
+});
+test('draft absence never masks missing repositories, authorization failures or outages', async () => {
+  for (const status of [401, 403, 500]) {
+    await assert.rejects(() => fixture({ readStatus: status }).client.draft('1'), { httpStatus: status });
+  }
+  for (const status of [403, 404]) {
+    await assert.rejects(() => fixture({ noDraft: true, publishedStatus: status }).client.draft('1'), { httpStatus: status });
+  }
 });
 test('configs dry-run never writes or creates backups', async () => {
   const { client, calls } = fixture();
