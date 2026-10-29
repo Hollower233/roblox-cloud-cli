@@ -409,7 +409,7 @@ rbx --json localization write "Example Game" --file ./translations.json
 }
 ```
 
-可以一次提交全部译文，也可以只修正一个语言的标题。未提供的语言、标题或简介均保留。字段只支持 `title` 和 `description` 字符串，不接受 `null`、删除指令或 `read` 的完整 JSON 输出信封；读取结果需要先整理为上述编辑文件。源语言（例如 `en`）修改走 Cloud Universe 的字段掩码接口，可能需要额外的 `universe:write` 权限；其他译文、支持语言管理使用 `legacy-game-internationalization` 接口，最终由 Roblox 校验 Key 和资源权限。标题与简介分开提交，单批最多 25 个语言。
+可以一次提交全部译文，也可以只修正一个语言的标题。未提供的语言、标题或简介均保留。字段只支持 `title` 和 `description` 字符串，不接受 `null`、删除指令或 `read` 的完整 JSON 输出信封；读取结果需要先整理为上述编辑文件。源语言（例如 `en`）仍使用同一个 `localization write` 命令：CLI 从 Cloud Universe 返回的 `rootPlace` 定位根 Place，再通过 Cloud Update Place 的字段掩码接口修改 `displayName` 和／或 `description`，需要对应根 Place 的写权限。不能直接修改 Universe 的 `displayName` 代替根 Place 更新，该操作可能返回成功却不改变源标题。其他译文、支持语言管理使用 `legacy-game-internationalization` 接口，最终由 Roblox 校验 Key 和资源权限。译文标题与简介分开提交，单批最多 25 个语言。
 
 语言代码与地区代码不同：`en` 是英文通用版本，`en-gb`/`en_gb` 是英国版本。英文、法文、葡萄牙文、西班牙文支持独立地区覆盖；其他地区代码输入会映射到对应语言通用版本，例如 `ja-jp` → `ja`。别名冲突会在写入前拒绝；源语言默认地区不能作为覆盖项（例如源语言是 `en` 时，使用 `en` 修改原文，不能用 `en-us` 覆盖）。额外返回的历史语言记录保留在 `translations` 中，不丢弃。
 

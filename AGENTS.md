@@ -83,6 +83,7 @@
 ## 游戏标题与简介本地化
 
 - 语言目录、标题简介读写与支持语言管理：`src/localization/game-info.ts`。
+- 源语言标题／简介由 `localization write` 自动定位 Universe 的 `rootPlace`，通过 Cloud Update Place 修改；不要直接 PATCH Universe 的 `displayName`。其他语言继续走本地化接口。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/localization.test.ts`；真实只读验证：`scripts/localization-smoke.ts`。
 - 本地备份：应用数据目录下的 `localization-backups/`；使用文档：`README.md`。

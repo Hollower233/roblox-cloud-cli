@@ -100,6 +100,15 @@ export class GameInfoLocalization {
     return { title: string(d.displayName), description: string(d.description) };
   }
 
+  private async rootPlacePath(universeId: string): Promise<string> {
+    const d = object(await this.http.request(`https://apis.roblox.com/cloud/v2/universes/${id(universeId)}`, { auth: true }));
+    const path = string(d.rootPlace);
+    if (!new RegExp(`^universes/${universeId}/places/[1-9][0-9]*$`).test(path)) {
+      throw new AppError('INVALID_RESPONSE', 'Universe did not return a valid root place for source edits.');
+    }
+    return path;
+  }
+
   async read(universeId: string): Promise<GameInfoSnapshot> {
     id(universeId);
     const [catalog, sourceLanguage, source, configured, translations] = await Promise.all([
@@ -203,9 +212,13 @@ export class GameInfoLocalization {
       const body = Object.fromEntries(sourceRows.map(row => [row.field === 'title' ? 'displayName' : 'description', row.value]));
       try {
         checkAbort();
-        await this.http.request(`https://apis.roblox.com/cloud/v2/universes/${universeId}?updateMask=${Object.keys(body).join(',')}`, { auth: true, method: 'PATCH', body });
+        // Source game info is edited on the root place. Universe displayName writes
+        // can return HTTP 200 while leaving the actual title unchanged.
+        const rootPlace = await this.rootPlacePath(universeId);
+        checkAbort();
+        await this.http.request(`https://apis.roblox.com/cloud/v2/${rootPlace}?updateMask=${Object.keys(body).join(',')}`, { auth: true, method: 'PATCH', body });
       } catch (error) {
-        if (error instanceof AppError && error.code === 'FORBIDDEN') error = new AppError('FORBIDDEN', 'Source edits require universe:write and access to this universe. Roblox rejected the request.', 403);
+        if (error instanceof AppError && error.code === 'FORBIDDEN') error = new AppError('FORBIDDEN', 'Source edits require write access to the root place. Roblox rejected the request.', 403);
         writeError(sourceRows, error);
       }
     }

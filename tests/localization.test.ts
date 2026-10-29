@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { GameInfoLocalization, parseGameInfoTranslations, type GameInfoTranslations } from '../src/localization/game-info.js';
 import { HttpClient } from '../src/transport/http-client.js';
 
-function fixture(options: { rejectDescription?: boolean; lost?: boolean; denied?: boolean; noEffect?: boolean; addFails?: boolean; nullEmpty?: boolean; malicious?: boolean; delayed?: boolean; extraLanguages?: boolean; cancelAfterAdd?: AbortController } = {}) {
+function fixture(options: { rejectDescription?: boolean; lost?: boolean; denied?: boolean; noEffect?: boolean; sourceDenied?: boolean; sourceNoEffect?: boolean; rootPlace?: string; addFails?: boolean; nullEmpty?: boolean; malicious?: boolean; delayed?: boolean; extraLanguages?: boolean; cancelAfterAdd?: AbortController } = {}) {
   const locales = [
     ['en', 'English', 'en_us'], ['en', 'English', 'en_gb'], ['ja', 'Japanese', 'ja_jp'],
     ['hi', 'Hindi', 'hi_in'], ['fr', 'French', 'fr_fr'], ['fr', 'French', 'fr_ca'],
@@ -29,9 +29,14 @@ function fixture(options: { rejectDescription?: boolean; lost?: boolean; denied?
     if (url.host === 'locale.roblox.com') return Response.json({ data: locales.map(([languageCode, name, locale]) => ({ locale: { locale, name, language: { languageCode, name, nativeName: name } } })) });
     if (url.pathname.includes('source-language')) return Response.json({ languageCode: 'en' });
     if (url.pathname === '/cloud/v2/universes/1') {
+      assert.equal(method, 'GET', 'source writes must target the root place, not the universe');
+      return Response.json({ ...source, rootPlace: options.rootPlace ?? 'universes/1/places/99' });
+    }
+    if (url.pathname === '/cloud/v2/universes/1/places/99') {
       if (method === 'PATCH') {
+        if (options.sourceDenied) return new Response(null, { status: 403 });
         assert.equal(url.searchParams.get('updateMask'), Object.keys(body).join(','));
-        Object.assign(source, body);
+        if (!options.sourceNoEffect) Object.assign(source, body);
       }
       return Response.json(source);
     }
@@ -101,15 +106,57 @@ test('write targets only provided fields and adds missing languages without enab
   assert.equal(calls.filter(row => row.method === 'PATCH' && row.url.pathname.includes('name-description')).length, 2);
 });
 
-test('source edits use Cloud field masks and regional overrides retain distinct targets', async () => {
+test('source description edits target the discovered root place and regional overrides retain distinct targets', async () => {
   const { client, source, calls } = fixture();
   const result = await client.write('1', { en: { description: 'New source' }, 'en-gb': { title: 'British title' } });
   assert.ok(result.results.every(row => row.status === 'success'));
   assert.equal(source.displayName, 'Example');
   assert.equal(source.description, 'New source');
-  assert.deepEqual(calls.find(row => row.method === 'PATCH' && row.url.pathname === '/cloud/v2/universes/1')!.body, { description: 'New source' });
+  assert.deepEqual(calls.find(row => row.method === 'PATCH' && row.url.pathname === '/cloud/v2/universes/1/places/99')!.body, { description: 'New source' });
   assert.deepEqual(result.addedLanguages, []);
   assert.ok(!calls.some(row => row.method === 'PATCH' && row.url.pathname.includes('supported-languages')));
+});
+
+test('source title edits update the root place while preserving the description', async () => {
+  const { client, source, calls } = fixture();
+  const result = await client.write('1', { en: { title: '[RANKED] Example' } });
+  assert.equal(result.results[0]!.status, 'success');
+  assert.equal(source.displayName, '[RANKED] Example');
+  assert.equal(source.description, 'Source description');
+  const writes = calls.filter(row => row.method === 'PATCH');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0]!.url.pathname, '/cloud/v2/universes/1/places/99');
+  assert.equal(writes[0]!.url.searchParams.get('updateMask'), 'displayName');
+  assert.deepEqual(writes[0]!.body, { displayName: '[RANKED] Example' });
+});
+
+test('source title and description can be updated together on the root place', async () => {
+  const { client, source, calls } = fixture();
+  const result = await client.write('1', { en: { title: 'New title', description: 'New description' } });
+  assert.ok(result.results.every(row => row.status === 'success'));
+  assert.deepEqual(source, { displayName: 'New title', description: 'New description' });
+  const writes = calls.filter(row => row.method === 'PATCH');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0]!.url.searchParams.get('updateMask'), 'displayName,description');
+});
+
+test('invalid or foreign root place paths cannot cause mutations', async () => {
+  for (const rootPlace of ['', 'universes/2/places/99', 'universes/1/places/99?redirect=1', 'https://example.com/places/99']) {
+    const { client, calls } = fixture({ rootPlace });
+    const result = await client.write('1', { en: { title: 'New title' } });
+    assert.equal(result.results[0]!.error!.code, 'INVALID_RESPONSE');
+    assert.notEqual(result.results[0]!.status, 'success');
+    assert.equal(calls.some(row => row.method !== 'GET'), false);
+  }
+});
+
+test('source writes require permission and a matching readback, without retrying mutations', async () => {
+  for (const options of [{ sourceDenied: true }, { sourceNoEffect: true }]) {
+    const { client, calls } = fixture(options);
+    const result = await client.write('1', { en: { title: 'New title' } });
+    assert.equal(result.results[0]!.status, 'sourceDenied' in options ? 'error' : 'unverified');
+    assert.equal(calls.filter(row => row.method === 'PATCH').length, 1);
+  }
 });
 
 test('a regional override adds its parent language instead of an unsupported Locale entry', async () => {
