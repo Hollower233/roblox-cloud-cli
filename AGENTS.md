@@ -110,3 +110,10 @@
 - CLI：`configs`、`experiments`；SDK 导出：`src/index.ts`。仅管理 InExperienceConfig 和游戏内配置实验。
 - 离线验证：`tests/configs.test.ts`、`tests/experiments.test.ts`、`tests/cloud-cli.test.ts`；显式真实只读验证：`scripts/cloud-management-smoke.ts`。
 - 本地备份：应用数据目录下的 `config-backups/`、`experiment-backups/`。发布必须提供审阅的草稿哈希；异步未完成保留操作 ID，不重试写入。
+
+## 服务器重启
+
+- 重启模块：`src/universes/restart.ts`；命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
+- `servers restart --universe <ID>` 默认立即重启所有活跃 Place 的旧服。`--all` 纳入当前版本，`--countdown` 由 Roblox 延迟一分钟。
+- `servers status --universe <ID>` 通过只读重启影响预估接口汇总活跃服务器和预计受影响的旧服。
+- 离线验证：`tests/server-restart.test.ts`；使用文档：`README.md`。

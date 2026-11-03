@@ -24,6 +24,7 @@ import { RobloxApi } from '../roblox/api.js';
 import { LocalStore, defaultHome } from '../storage/store.js';
 import { PlayerCatalogService, type SavedPlayer } from '../players/catalog.js';
 import { CatalogService, selectGames } from '../universes/catalog.js';
+import { getUniverseServerStatus, restartUniverseServers } from '../universes/restart.js';
 import { emit, renderCatalog, renderIconPlan, renderLocalization, localTime, remaining, clean } from './output.js';
 import { IconAssets, IconCountdown, type CountdownEvent, type CountdownOptions } from '../icons/countdown.js';
 import { parseTargetTime, requireDuration } from '../icons/frames.js';
@@ -464,6 +465,24 @@ icon.command('countdown <universeId> [folder]')
 const cloudContext = commandContext(program, abort.signal);
 registerConfigs(program, cloudContext);
 registerExperiments(program, cloudContext);
+
+const servers = program.command('servers').description('Manage live game servers');
+servers.command('status').description('Read active servers and the estimated count affected by an outdated-server restart')
+  .requiredOption('--universe <id>', 'Target Universe ID', id)
+  .action(async ({ universe }: { universe: string }) => {
+    const apiKey = await new CredentialStore(store().home).get();
+    const http = new HttpClient({ apiKey, signal: abort.signal });
+    cloudContext.output(await getUniverseServerStatus(http, universe));
+  });
+servers.command('restart').description('Submit a restart for all active places in a universe')
+  .requiredOption('--universe <id>', 'Target Universe ID', id)
+  .option('--all', 'Restart all versions (default: outdated versions only)')
+  .option('--countdown', 'Delay the restart by exactly one minute on Roblox')
+  .action(async (options: { universe: string; all?: boolean; countdown?: boolean }) => {
+    const apiKey = await new CredentialStore(store().home).get();
+    const http = new HttpClient({ apiKey, signal: abort.signal });
+    cloudContext.receipt(await restartUniverseServers(http, options.universe, options));
+  });
 
 try { await program.parseAsync(process.argv); }
 catch (error) {

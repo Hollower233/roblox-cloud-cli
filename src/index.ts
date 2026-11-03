@@ -17,6 +17,8 @@ export type { AssetCacheOptions, AssetCacheResult, CacheProcess, CacheTargetResu
 export type { HttpOptions } from './transport/http-client.js';
 export { RobloxApi } from './roblox/api.js';
 export { CatalogService, selectGames } from './universes/catalog.js';
+export { getUniverseServerStatus, restartUniverseServers } from './universes/restart.js';
+export type { ServerCounts, ServerRestartOptions, UniverseServerStatus } from './universes/restart.js';
 export type { CatalogOptions } from './universes/catalog.js';
 export * from './universes/models.js';
 export { LocalStore, defaultHome } from './storage/store.js';
