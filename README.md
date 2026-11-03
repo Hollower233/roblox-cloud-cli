@@ -256,7 +256,46 @@ node --import tsx src/cli/main.ts --json profile clear 987654321 --players "1234
 
 模块：`src/profiles/clear.ts`、`src/datastores/entries.ts`；离线验证：`tests/profile-clear.test.ts`、`tests/storage-cli.test.ts`。
 
-## 游戏图标倒计时
+## 自动生成游戏图标倒计时
+
+无需预制图片：每次新建任务都下载线上当前的根 Place Icon 作为底图，保存原素材 ID，再叠加 35% 黑色遮罩、内置白色沙漏 SVG 和固定粗体文字。图片输出为 512×512 PNG。字体使用随依赖分发的 Archivo Black（OFL-1.1），文字先转矢量轮廓，跨电脑不依赖系统字体。
+
+默认完整一套 **31 张**：`24h、23h、…、1h、30mins、15mins、10mins、5mins、1min`，以及独立的 `SOON!`、`NOW!`。新建正式任务仅生成本次剩余时间内的节点，SOON/NOW 始终提前生成、上传和审核；超过 24 小时启动时保持原图，剩余 24 小时再开始。若线上当前图标已经带文字／倒计时，这些内容会直接保留在底图中。
+
+```sh
+# 只下载并在本地生成完整预览，不上传、不修改游戏；输出目录不能已存在
+rbx icon generate 123456789 --output "D:/倒计时预览"
+rbx icon generate 123456789 --nodes "3h,1h,30mins,10mins,1min" --output "D:/自定义预览"
+
+# 创建任务：恢复时间必填，必须晚于目标时间
+rbx icon countdown 123456789 --at "2026-11-06 20:00" --restore-at "2026-11-07 22:00"
+rbx icon countdown 123456789 --in 3h --restore-at "2026-11-07 22:00"
+rbx icon countdown 123456789 --in 3h --restore-at "2026-11-07 22:00" --dry-run
+
+# 另开终端，在实际发版完成后切 NOW；预设恢复时间不变
+rbx icon now 123456789
+
+# 离线查看完整状态；中断后按原参数和进度续跑
+rbx icon status 123456789
+rbx icon resume 123456789
+
+# 随时立即恢复原图并结束任务，后续节点不再切换
+rbx icon restore 123456789
+```
+
+**流程**：提前生成和审核 → 自动倒计时 → 目标时刻自动 SOON → 人工指令 NOW → 固定时间恢复原图。NOW 可以提前手动触发，之后所有倒计时／SOON 节点停止；恢复时间与是否执行 NOW 无关。恢复时直接设置保存的原素材引用，不重新上传原图，也不因图标被另行修改而跳过恢复。手动恢复是幂等操作；任务结束后 NOW 会报错。
+
+`--at` 接受本机时间或带时区的 ISO；`--in` 从本次全部素材审核通过后开始计时，首次确定后保存在任务中，续跑不顺延。`--nodes` 为逗号分隔的唯一正时长，每个节点最多 24 小时，也支持秒级节点用于显式测试。`--moderation-timeout` 默认 `30m`，每次续跑可重新设置等待时长。审核拒绝／超时会退出，保留任务和素材引用；使用 `resume` 重新查询审核，或 `restore` 结束任务。缓存按 Owner 和生成图片内容哈希复用，复用前重新查询审核状态；本地图片被修改会拒绝上传。
+
+**运行条件**：`countdown`／`resume` 是前台常驻调度器，电脑和进程必须保持运行；`now`／`restore` 可在另一进程执行。Ctrl+C 后需 `resume` 才会继续自动切换。错过多个节点只补最近一个；恢复时间已过时优先恢复，不补 SOON/NOW。API 请求、网络和 Roblox 展示缓存可能造成延迟。每个 Universe 仅允许一个未结束任务；与旧文件夹倒计时互斥。生成命令需要读取图标和原图的权限；任务还需要素材上传／更新权限，通常为 `asset:read`、`asset:write`、`legacy-asset:manage`，以及对应 Universe／Owner 的访问范围。正式任务的 Universe 需已在本地游戏目录。
+
+`--dry-run` 只读本地状态和计算节点，不联网、不写文件；它不能预览实际底图，图片预览使用 `generate`。自动生成模式不接受旧模式的 `--restore-after`、`--reset`、`--no-cache`。`--json` 的任务执行过程按 NDJSON 输出事件，最后一行输出任务状态；`status` 输出单个 JSON 对象。
+
+**本地数据**：应用数据目录的 `icon-countdown/tasks/<universeId>.json` 保存当前任务，`generated/<taskId>/` 保存原图、SVG、PNG、清单和总览；旧任务素材保留供复查。`generated-assets/` 保存按 Owner／内容哈希划分的素材缓存，`locks/` 保存短操作锁与调度进程锁。真实素材和测试结果不写入仓库。
+
+**验证**：默认离线测试为 `tests/icon-tasks.test.ts`。真实测试会上传并修改指定游戏，须显式设置 `RBX_LIVE_GENERATED_ICON_UNIVERSE` 后运行 `npm run test:live:icons`（先 `npm run build`）。脚本测试短倒计时、SOON、人工 NOW、定时恢复和恢复幂等性，保存原图标引用并在失败时尝试恢复。真实日志保存在本地 `icon-countdown/live-smoke/`。
+
+## 游戏图标倒计时（预制文件夹兼容模式）
 
 在更新上线前按时间节点自动切换游戏图标（根 Place 的 Icon）。所有图片先上传并全部通过审核，才开始倒计时，到点只切换素材引用，不再等待上传。
 

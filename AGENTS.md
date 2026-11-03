@@ -43,6 +43,15 @@
 - 离线验证：`tests/icons.test.ts`。
 - 本地数据：应用数据目录下的 `icon-countdown/`（`assets.json` 素材缓存、`runs/` 进度、`anchors/` 相对时长锚点、`locks/` 运行锁）。
 
+## 自动生成倒计时任务
+
+- 模板与图片合成：`src/icons/render.ts`；线上图标获取、审核、任务状态与调度：`src/icons/tasks.ts`；跨进程锁：`src/icons/lock.ts`。
+- CLI 接入：`src/cli/commands/icon-tasks.ts`、`src/cli/main.ts`；SDK 导出：`src/index.ts`。命令：`icon generate/countdown/status/now/restore/resume`；旧文件夹模式保持兼容。
+- 默认每小时 24h..1h，再 30/15/10/5/1 分钟，加 SOON/NOW，共 31 张；每次从线上当前 Icon 获取底图，内置 SVG／固定字体转路径／35% 遮罩。
+- 流程：审核全部素材后自动倒计时 → SOON；人工 NOW 停止后续倒计时；`--restore-at` 独立固定恢复，无条件切回保存的原素材。手动恢复结束任务，恢复优先于过期节点。调度进程需持续运行，中断后 `resume`。
+- 本地：`icon-countdown/tasks/`、`generated/`、`generated-assets/`、`locks/`；不提交真实素材与账号结果。
+- 离线：`tests/icon-tasks.test.ts`；显式真实写测试：`scripts/icon-tasks-smoke.ts`，环境变量 `RBX_LIVE_GENERATED_ICON_UNIVERSE`，命令 `npm run test:live:icons`。
+
 ## 素材原图下载
 
 - 下载与 Decal 纹理引用解析模块：`src/assets/download.ts`。
@@ -87,6 +96,12 @@
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/localization.test.ts`；真实只读验证：`scripts/localization-smoke.ts`。
 - 本地备份：应用数据目录下的 `localization-backups/`；使用文档：`README.md`。
+
+## 倒计时诊断日志
+
+- CLI 诊断模块：`src/cli/countdown-log.ts`；接入：`src/cli/main.ts`。
+- 本地诊断：应用数据目录下的 `icon-countdown/logs/*.diagnostic.ndjson`。
+- 离线验证：`tests/countdown-log.test.ts`。
 
 ## Configs 与 A/B 实验
 

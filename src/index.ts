@@ -36,3 +36,7 @@ export { IconAssets, IconCountdown, systemClock } from './icons/countdown.js';
 export type { CountdownClock, CountdownEvent, CountdownNodeView, CountdownOptions, CountdownPreview, CountdownResult, CountdownRuntime, IconCreator, ModerationState } from './icons/countdown.js';
 export { imageInfo, parseDuration, parseTargetTime, planCountdown, scanIconFolder, selectPending } from './icons/frames.js';
 export type { CountdownPlan, IconFrame, IconImage, PlannedFrame } from './icons/frames.js';
+export { DEFAULT_ICON_NODES, HOURGLASS_SVG, iconNodes, renderIcon, generateIconImages } from './icons/render.js';
+export type { GeneratedIcon } from './icons/render.js';
+export { IconTasks, captureCurrentIcon, generateCurrentIcons, nextIconTaskEvent } from './icons/tasks.js';
+export type { IconTask, IconTaskFrame, IconSnapshot, CreateIconTaskOptions, IconTaskRuntime } from './icons/tasks.js';

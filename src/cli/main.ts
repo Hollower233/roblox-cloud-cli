@@ -3,6 +3,8 @@ import { Command, CommanderError } from 'commander';
 import { commandContext } from './context.js';
 import { registerConfigs } from './commands/configs.js';
 import { registerExperiments } from './commands/experiments.js';
+import { countdownLog } from './countdown-log.js';
+import { generatedCountdown, registerIconTasks } from './commands/icon-tasks.js';
 import { GroupRoles, groupPlayerInput } from '../groups/roles.js';
 import password from '@inquirer/password';
 import { downloadAssetImage, parseAssetId } from '../assets/download.js';
@@ -27,6 +29,7 @@ import { IconAssets, IconCountdown, type CountdownEvent, type CountdownOptions }
 import { parseTargetTime, requireDuration } from '../icons/frames.js';
 import type { Catalog, Warning } from '../universes/models.js';
 
+let diagnostics: ReturnType<typeof countdownLog> | undefined;
 const abort = new AbortController();
 process.once('SIGINT', () => abort.abort());
 process.once('SIGTERM', () => abort.abort());
@@ -389,8 +392,10 @@ program.command('cache').description('Manage local Roblox asset caches')
     process.exitCode = result.status === 'success' ? 0 : result.status === 'partial' ? 3 : 1;
   });
 
-program.command('icon').description('Game icon tools')
-  .command('countdown <universeId> <folder>')
+const icon = program.command('icon').description('Game icon tools');
+const iconContext = { store, json, signal: abort.signal };
+registerIconTasks(icon, iconContext);
+icon.command('countdown <universeId> [folder]')
   .description('Pre-upload countdown icons, wait for moderation, then switch the root place icon on schedule')
   .option('--at <time>', 'Target time: "YYYY-MM-DD HH:MM[:SS]" local time, or ISO-8601 with timezone')
   .option('--in <duration>', 'Target this long after all icons pass moderation, e.g. 3h or 1h30m')
@@ -398,10 +403,14 @@ program.command('icon').description('Game icon tools')
   .option('--no-cache', 'Upload again instead of reusing cached image asset IDs')
   .option('--reset', 'With --in: discard the unfinished countdown for this folder and start over')
   .option('--restore-after <duration>', 'Switch back to the original icon this long after now, e.g. 1h')
+  .option('--restore-at <time>', 'Generated task: independent fixed time to restore the original icon (required)')
+  .option('--nodes <durations>', 'Generated task: comma-separated countdown nodes (up to 24h)')
   .option('--dry-run', 'Show the plan from local files only; no API calls or writes')
-  .action(async (universeId: string, folder: string, options) => {
+  .action(async (universeId: string, folder: string | undefined, options) => {
     id(universeId);
     if (Boolean(options.at) === Boolean(options.in)) throw new AppError('ARGUMENT_ERROR', 'Specify exactly one of --at or --in.');
+    if (!folder) return generatedCountdown(universeId, options, iconContext);
+    if (options.restoreAt || options.nodes) throw new AppError('ARGUMENT_ERROR', '--restore-at and --nodes apply to automatically generated countdowns; omit the folder.');
     if (options.reset && !options.in) throw new AppError('ARGUMENT_ERROR', '--reset only applies to --in.');
     const local = store(), config = await local.config();
     const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;
@@ -418,6 +427,8 @@ program.command('icon').description('Game icon tools')
       emit(preview, json(), preview.alreadyCompleted ? `该倒计时已完成（目标时刻 ${localTime(preview.target)}）。` : `${preview.resumed ? '续跑已有倒计时。\n' : ''}${renderIconPlan(preview.target, preview.nodes, preview.skipped, preview.restoreAt)}\n[dry-run] 未调用 API，也未写入文件。`, preview.warnings);
       return;
     }
+    diagnostics = countdownLog(local.home, universeId);
+    process.stderr.write(`Countdown diagnostics: ${diagnostics.path}\n`);
     const apiKey = await new CredentialStore(local.home).get(), identity = await api(apiKey).identity();
     const scope = identity.scopes.find(item => item.name === 'asset');
     if (!scope || !['read', 'write'].every(operation => scope.operations.includes(operation))) throw new AppError('FORBIDDEN', 'The API key needs the asset:read and asset:write scopes.');
@@ -425,6 +436,7 @@ program.command('icon').description('Game icon tools')
     let ticking = false, reviewing = '';
     const say = (text: string) => { if (ticking) { process.stderr.write('\n'); ticking = false; } process.stderr.write(text + '\n'); };
     const onEvent = (event: CountdownEvent) => {
+      diagnostics?.event(event);
       if (json()) { process.stdout.write(JSON.stringify({ schemaVersion: 1, ...event }) + '\n'); return; }
       if (event.event === 'scanned') {
         say(`找到 ${event.frames.length} 张图标：${event.frames.map(frame => clean(frame.label)).join(', ')}`);
@@ -460,6 +472,7 @@ catch (error) {
     if (error instanceof CommanderError) error = new AppError('ARGUMENT_ERROR', 'Invalid command or arguments. Run rbx --help.');
     if (abort.signal.aborted) error = new AppError('CANCELLED', 'Operation cancelled.');
     const info = errorInfo(error);
+    diagnostics?.error(info.code, info.httpStatus);
     if (json() || process.argv.includes('--json')) process.stdout.write(JSON.stringify({ schemaVersion: 1, status: 'error', error: info }) + '\n');
     else process.stderr.write(`Error [${info.code}] ${clean(info.message)}\n`);
     process.exitCode = exitCode(error);

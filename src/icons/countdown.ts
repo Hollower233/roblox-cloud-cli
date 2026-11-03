@@ -197,6 +197,8 @@ export class IconCountdown {
     this.emit({ event: 'scanned', frames: frames.map(({ label, file, offsetMs, width, height }) => ({ label, file, offsetMs, width, height })), warnings });
     const release = await this.lock(options.universeId);
     try {
+      const generated = await readJson(this.path('tasks', `${id(options.universeId)}.json`));
+      if (generated && generated.phase !== 'restored') throw new AppError('STORAGE_LOCKED', 'A generated icon task is active; restore it before running a folder countdown.');
       let { state, targetMs } = await this.locate(options, true);
       const resumed = state !== null;
       if (state?.finishedAt) {
