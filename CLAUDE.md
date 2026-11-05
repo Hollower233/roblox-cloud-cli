@@ -122,6 +122,6 @@
 
 - Studio 本地化表 `.rbxm` 读写：`src/localization/rbxm.ts`、`src/localization/lua-table.ts`、`src/localization/table.ts`；主表（en/zh）只读，语言子模块由 CLI 生成。
 - 云端翻译表、开启本地化：`src/localization/cloud-table.ts`；同步与首次导入：`src/localization/sync.ts`；DeepSeek 客户端与批量翻译：`src/translation/deepseek.ts`。
-- CLI：`localization enable/sync/import/export/show`、`deepseek auth/models/config`（`src/cli/commands/localization-table.ts`）；SDK 导出：`src/index.ts`。
+- CLI：`localization init/enable/sync/import/export/show`、`deepseek auth/models/config`（`src/cli/commands/localization-table.ts`）；SDK 导出：`src/index.ts`。
 - 云端只增改通用条目（无 Key、无 Context），从不发送 delete；推送前备份到 `localization-backups/table-*.json`。DeepSeek Key 存 `deepseek.dpapi`，模型配置 `deepseek.json`，译文缓存 `localization-cache/translations.jsonl`。
 - 离线验证：`tests/localization-table.test.ts`。

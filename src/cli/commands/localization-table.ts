@@ -6,6 +6,7 @@ import { CredentialStore, deepseekCredential, validateKey } from '../../auth/cre
 import { AppError } from '../../core/errors.js';
 import { CloudLocalizationTable, enableLocalization } from '../../localization/cloud-table.js';
 import { importFromCloud, syncLocalization } from '../../localization/sync.js';
+import { MASTER_NAME } from '../../localization/lua-table.js';
 import { LocalizationTable, MASTER_LOCALE, SOURCE_LOCALE, studioSwapLuau } from '../../localization/table.js';
 import { DeepSeekClient, TranslationCache, readDeepSeekConfig, writeDeepSeekConfig } from '../../translation/deepseek.js';
 import { LocalStore, defaultHome } from '../../storage/store.js';
@@ -21,6 +22,16 @@ export function registerLocalizationTable(program: Command, localization: Comman
   const cloud = async (input: string) => { const { universeId, http } = await context.universe(input); return { universeId, cloud: new CloudLocalizationTable(http) }; };
   const defaultOut = (source: string) => join(dirname(resolve(source)), `${basename(source, extname(source))}.synced.rbxm`);
   const swapHint = (name: string, parent: string) => `\n导入 Studio：import_rbxm 到 ${parent}，再用 execute_luau 执行：\n${studioSwapLuau(parent, name)}`;
+
+  localization.command('init').description('Write an empty master table .rbxm (standard header) to import into Studio for a new project')
+    .option('--out <rbxm>', 'Output .rbxm', `${MASTER_NAME}.rbxm`)
+    .option('--force', 'Overwrite an existing file')
+    .option('--parent <path>', 'Studio parent of the table, used in the import hint', STUDIO_PARENT)
+    .action(async options => {
+      const table = LocalizationTable.empty();
+      const out = await table.create(options.out, { force: Boolean(options.force) });
+      emit({ out, name: table.name, parent: options.parent }, json(), `空本地化表：${out}\n导入 Studio：import_rbxm 到 ${options.parent}（不存在先建 Folder），得到 ${options.parent}[${JSON.stringify(table.name)}]；按表头在 return { 之后逐条写入 { en = "...", zh = "..." }，语言子模块由 sync 生成。`);
+    });
 
   localization.command('enable <games...>').description('Turn on game localization: source en, all languages + auto-translation, table in use, ATC on, auto-deletion off (idempotent)')
     .option('--dry-run', 'Show what would change without writing')

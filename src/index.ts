@@ -47,7 +47,7 @@ export type { TableSettings, CloudEntry, CloudTranslation, PushRow, PushResult, 
 export { LocalizationTable, studioSwapLuau } from './localization/table.js';
 export { readRbxm, writeRbxm } from './localization/rbxm.js';
 export type { ScriptNode } from './localization/rbxm.js';
-export { parseMasterSource, parseLanguageSource, languageModuleSource } from './localization/lua-table.js';
+export { parseMasterSource, parseLanguageSource, languageModuleSource, masterModuleSource, MASTER_NAME, MASTER_HEADER } from './localization/lua-table.js';
 export { syncLocalization, importFromCloud } from './localization/sync.js';
 export type { SyncOptions, SyncResult, GamePush, ImportResult } from './localization/sync.js';
 export { DeepSeekClient, TranslationCache, translate, checkTranslation } from './translation/deepseek.js';

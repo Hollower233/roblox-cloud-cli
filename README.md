@@ -486,6 +486,10 @@ rbx deepseek auth set
 rbx deepseek models
 rbx deepseek config --model deepseek-flash
 
+# 新项目还没有本地化表：生成空主表（默认 ./本地化表.rbxm，已存在需 --force），
+# 用 import_rbxm 导入到 game.ServerStorage["项目文档"]（不存在先建 Folder）后按表头写条目
+rbx localization init --out ./本地化表.rbxm
+
 # Agent 先用 robloxstudio-mcp 的 export_rbxm 导出 game.ServerStorage["项目文档"]["本地化表"]
 rbx localization sync 123 456 --source ./本地化表.rbxm --dry-run
 rbx localization sync 123 456 --source ./本地化表.rbxm

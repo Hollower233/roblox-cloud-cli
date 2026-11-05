@@ -43,6 +43,21 @@ test('table keeps master order, drops orphans and is saved under the import name
   assert.match(studioSwapLuau('game.ServerStorage', '本地化表'), /new.Source ~= old.Source/);
 });
 
+test('empty table is written under its own name, parses back and refuses to overwrite', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'rbx-init-'));
+  try {
+    const path = join(dir, 'x.rbxm'), table = LocalizationTable.empty();
+    await table.create(path);
+    const [root, ...rest] = readRbxm(await readFile(path));
+    assert.equal(rest.length, 0); assert.equal(root!.name, '本地化表'); assert.equal(root!.children.length, 0);
+    assert.match(root!.source!, /^--\[\[\n本地化表：[^]*新条目插在表最前面[^]*\\\\ \\" \\n[^]*\]\]\nreturn \{\n\}\n$/);
+    const loaded = await LocalizationTable.load(path);
+    assert.equal(loaded.name, '本地化表'); assert.equal(loaded.rows.length, 0); assert.equal(loaded.languages.size, 0);
+    await assert.rejects(table.create(path), /already exists/);
+    await table.create(path, { force: true });
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('translation check guards placeholders and tags', () => {
   assert.equal(checkTranslation('Win {a:int} <b>now</b>', 'Gagne {a:int} <b>maintenant</b>'), null);
   assert.equal(checkTranslation('Win {a:int}', 'Gagne {a}'), 'placeholders differ');

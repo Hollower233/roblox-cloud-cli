@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { AppError } from '../core/errors.js';
 import { readRbxm, writeRbxm, type ScriptNode } from './rbxm.js';
-import { languageModuleSource, luaString, parseLanguageSource, parseMasterSource, type MasterRow } from './lua-table.js';
+import { MASTER_NAME, languageModuleSource, luaString, masterModuleSource, parseLanguageSource, parseMasterSource, type MasterRow } from './lua-table.js';
 
 export const SOURCE_LOCALE = 'en';
 export const MASTER_LOCALE = 'zh-hans';
@@ -41,6 +41,11 @@ export class LocalizationTable {
     return LocalizationTable.fromRbxm(file);
   }
 
+  /** A new master with the standard header and no rows; language modules come from sync. */
+  static empty(name = MASTER_NAME): LocalizationTable {
+    return new LocalizationTable(name, masterModuleSource(), [], new Map());
+  }
+
   /** Translation for a source in a locale; zh-hans comes from the master. Empty strings count as missing. */
   get(source: string, locale: string): string | undefined {
     if (locale === MASTER_LOCALE) return this.rows.find(row => row.en === source)?.zh || undefined;
@@ -68,6 +73,18 @@ export class LocalizationTable {
     const target = resolve(path);
     await mkdir(dirname(target), { recursive: true });
     try { await writeFile(target, this.toRbxm(this.name + IMPORT_SUFFIX)); } catch { throw new AppError('STORAGE_ERROR', `Cannot write ${path}.`); }
+    return target;
+  }
+
+  /** Written under the table's own name for a first import; refuses to overwrite unless forced. */
+  async create(path: string, options: { force?: boolean } = {}): Promise<string> {
+    const target = resolve(path);
+    await mkdir(dirname(target), { recursive: true });
+    try { await writeFile(target, this.toRbxm(), { flag: options.force ? 'w' : 'wx' }); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new AppError('ARGUMENT_ERROR', `${path} already exists; use --force to overwrite.`);
+      throw new AppError('STORAGE_ERROR', `Cannot write ${path}.`);
+    }
     return target;
   }
 
