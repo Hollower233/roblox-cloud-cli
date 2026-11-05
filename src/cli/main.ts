@@ -3,6 +3,7 @@ import { Command, CommanderError } from 'commander';
 import { commandContext } from './context.js';
 import { registerConfigs } from './commands/configs.js';
 import { registerExperiments } from './commands/experiments.js';
+import { registerLocalizationTable } from './commands/localization-table.js';
 import { countdownLog } from './countdown-log.js';
 import { generatedCountdown, registerIconTasks } from './commands/icon-tasks.js';
 import { GroupRoles, groupPlayerInput } from '../groups/roles.js';
@@ -115,7 +116,7 @@ for (const action of ['grant', 'revoke'] as const) {
     });
 }
 
-const localization = program.command('localization').description('Read all game-info languages and write selected titles/descriptions');
+const localization = program.command('localization').description('Game-info translations, and the in-game localization table (enable/sync/import/export/show)');
 async function localizationClient(input: string) {
   const local = store(), config = await local.config();
   const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;
@@ -465,6 +466,7 @@ icon.command('countdown <universeId> [folder]')
 const cloudContext = commandContext(program, abort.signal);
 registerConfigs(program, cloudContext);
 registerExperiments(program, cloudContext);
+registerLocalizationTable(program, localization, cloudContext);
 
 const servers = program.command('servers').description('Manage live game servers');
 servers.command('status').description('Read active servers and the estimated count affected by an outdated-server restart')

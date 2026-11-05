@@ -42,3 +42,13 @@ export { DEFAULT_ICON_NODES, HOURGLASS_SVG, iconNodes, renderIcon, generateIconI
 export type { GeneratedIcon } from './icons/render.js';
 export { IconTasks, captureCurrentIcon, generateCurrentIcons, nextIconTaskEvent } from './icons/tasks.js';
 export type { IconTask, IconTaskFrame, IconSnapshot, CreateIconTaskOptions, IconTaskRuntime } from './icons/tasks.js';
+export { CloudLocalizationTable, enableLocalization, requireEnabled } from './localization/cloud-table.js';
+export type { TableSettings, CloudEntry, CloudTranslation, PushRow, PushResult, EnableResult } from './localization/cloud-table.js';
+export { LocalizationTable, studioSwapLuau } from './localization/table.js';
+export { readRbxm, writeRbxm } from './localization/rbxm.js';
+export type { ScriptNode } from './localization/rbxm.js';
+export { parseMasterSource, parseLanguageSource, languageModuleSource } from './localization/lua-table.js';
+export { syncLocalization, importFromCloud } from './localization/sync.js';
+export type { SyncOptions, SyncResult, GamePush, ImportResult } from './localization/sync.js';
+export { DeepSeekClient, TranslationCache, translate, checkTranslation } from './translation/deepseek.js';
+export type { TranslationJob, TranslationOutcome, Usage } from './translation/deepseek.js';

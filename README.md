@@ -472,6 +472,43 @@ await localization.write('123', { ja: { title: 'サンプルゲーム' } }, {
 
 默认离线测试位于 `tests/localization.test.ts`。显式设置 `RBX_LIVE_LOCALIZATION_UNIVERSE` 后运行 `npm run test:live:localization`，仅验证真实读取与只读预览，不写游戏、不保存真实响应到仓库。
 
+## 游戏内本地化表（Studio 本地化表 → DeepSeek → 云端）
+
+本地化表以 Studio 中的 ModuleScript 为唯一来源：主表 `本地化表` 存英文原文和简体中文（由人或 Agent 维护，CLI 只读），子模块 `本地化表.<语言代码>` 存其他语言（每行 `["英文原文"] = "译文",`，顺序与主表一致，由 CLI 生成）。英文原文逐字作为主键。云端只接收单向推送：只处理无 Key、无 Context 的通用条目，只新增和修改，从不删除。
+
+```bash
+# 新游戏：源语言设为 en，启用全部语言并开启自动翻译，使用翻译表、开启自动采集文本、关闭自动删除（幂等）
+rbx localization enable "Ball VS Ball" --dry-run
+rbx localization enable 123 456
+
+# DeepSeek：Key 用 DPAPI 保存（DEEPSEEK_API_KEY 优先）；每次运行都会拉取模型列表
+rbx deepseek auth set
+rbx deepseek models
+rbx deepseek config --model deepseek-flash
+
+# Agent 先用 robloxstudio-mcp 的 export_rbxm 导出 game.ServerStorage["项目文档"]["本地化表"]
+rbx localization sync 123 456 --source ./本地化表.rbxm --dry-run
+rbx localization sync 123 456 --source ./本地化表.rbxm
+rbx localization sync 123 --source ./本地化表.rbxm --retranslate "Play Again"
+
+# 首次接入：把某个游戏云端已有的译文填入本地空位（--human-only 只要人工译文）
+rbx localization import 123 --source ./本地化表.rbxm
+rbx localization export --source ./本地化表.rbxm --out ./localization.json
+rbx localization show "Leave" --source-file ./本地化表.rbxm
+```
+
+`sync` 的流程：
+1. 每个目标游戏必须已开启本地化（源语言 en、使用翻译表），否则报错并提示先运行 `enable`，不翻译、不写入。
+2. 读取各游戏已启用语言的并集，找出本地缺失的「原文 × 语言」。zh-hans 来自主表，不翻译。
+3. DeepSeek 翻译：连续原文 × 一组语言为一批（默认每批不超过 120 个译文，12 种语言一组），默认 8 路并发（`--concurrency`）。逐条校验占位符（`{a:int}`）和标签（`<font>`），不合格的单独重试两次，仍失败则不写入并列在 warnings。译文同时写入应用数据目录 `localization-cache/translations.jsonl`，中断后重跑不重复付费。
+4. 写出完整的本地化表 `.rbxm`（默认 `<source>.synced.rbxm`），根模块名为 `本地化表__sync`；不再被主表引用的旧译文会被清理。
+5. 逐个游戏推送该游戏启用语言中与云端不一致的译文：推送前把云端全部条目备份到 `localization-backups/`，按 `maxEntriesPerUpdate` 分批；一个游戏失败不影响其他游戏。原文超过 `maxSourceLength`（目前 300）会被跳过并报告。
+6. 输出摘要：各语言新译文数、模型和 token 用量、每个游戏新增/修改/被拒数量。
+
+写回 Studio：`import_rbxm` 把输出文件导入到本地化表所在的父级，再用 `execute_luau` 执行输出中的 `studioSwapLuau`。它比较新旧主表的 Source，一致才删除旧表并把新表改名，不一致则丢弃导入，需要重新导出并 sync。
+
+`.rbxm` 读写由 `src/localization/rbxm.ts` 实现（读取 LZ4/ZSTD，写出使用 ZSTD），只保留 ModuleScript 的 Name 和 Source。
+
 ## Configs 与 A/B 实验
 
 正式命令为 `rbx configs`、`rbx experiments`，支持 Universe ID 或本地游戏目录中的精确名称。读取需要目标游戏的 `universe:read`，修改还需要 `universe:write`。Configs API 为 Beta，Experiments API 为 Experimental；当前仅管理 `InExperienceConfig` 与游戏内配置实验，不管理 matchmaking 实验。

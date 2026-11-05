@@ -27,13 +27,17 @@ export function validateKey(value: string): string {
   if (!key || /\s/.test(key)) throw new AppError('AUTH_INVALID', 'Expected a non-empty API key without whitespace.');
   return key;
 }
+export interface CredentialSlot { file: string; env: string; setCommand: string }
+export const robloxCredential: CredentialSlot = { file: 'credential.dpapi', env: 'ROBLOX_API_KEY', setCommand: 'rbx auth set' };
+export const deepseekCredential: CredentialSlot = { file: 'deepseek.dpapi', env: 'DEEPSEEK_API_KEY', setCommand: 'rbx deepseek auth set' };
 export class CredentialStore {
-  constructor(private home: string) {}
+  constructor(private home: string, private slot: CredentialSlot = robloxCredential) {}
   async get(): Promise<string> {
-    if (process.env.ROBLOX_API_KEY !== undefined) return validateKey(process.env.ROBLOX_API_KEY);
-    try { return validateKey(await protect(await readFile(join(this.home, 'credential.dpapi'), 'utf8'), true)); }
+    const env = process.env[this.slot.env];
+    if (env !== undefined) return validateKey(env);
+    try { return validateKey(await protect(await readFile(join(this.home, this.slot.file), 'utf8'), true)); }
     catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('AUTH_REQUIRED', 'Run rbx auth set or set ROBLOX_API_KEY.');
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('AUTH_REQUIRED', `Run ${this.slot.setCommand} or set ${this.slot.env}.`);
       if (e instanceof AppError) throw e;
       throw new AppError('STORAGE_ERROR', 'Cannot read the credential file.');
     }
@@ -42,9 +46,9 @@ export class CredentialStore {
     const encrypted = await protect(validateKey(key), false);
     await mkdir(this.home, { recursive: true, mode: 0o700 });
     const temporary = join(this.home, `${randomUUID()}.tmp`);
-    try { await writeFile(temporary, encrypted, { mode: 0o600, flag: 'wx' }); await rename(temporary, join(this.home, 'credential.dpapi')); }
+    try { await writeFile(temporary, encrypted, { mode: 0o600, flag: 'wx' }); await rename(temporary, join(this.home, this.slot.file)); }
     catch { throw new AppError('STORAGE_ERROR', 'Cannot save the encrypted credential.'); }
     finally { await rm(temporary, { force: true }).catch(() => {}); }
   }
-  async clear(): Promise<void> { await rm(join(this.home, 'credential.dpapi'), { force: true }); }
+  async clear(): Promise<void> { await rm(join(this.home, this.slot.file), { force: true }); }
 }
