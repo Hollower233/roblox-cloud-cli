@@ -443,10 +443,11 @@ await groups.change('123', { id: '789' }, ['456'], 'revoke');
 
 ## 游戏标题与简介本地化
 
-`localization` 管理游戏详情页的标题和简介，支持游戏名称（从本地游戏目录精确匹配，忽略大小写）或 Universe ID。语言目录每次从 Roblox 获取，不写死语言数量；输出全部创作者语言及地区版本，区分游戏已启用语言、返回的译文和未返回的内容。需要有效 API Key，英文原文通过 Cloud Universe 接口读取，私有游戏也可查询。
+`localization` 管理游戏详情页的标题和简介，支持游戏名称（从本地游戏目录精确匹配，忽略大小写）或 Universe ID。工具固定管理 18 种语言（Roblox 官方自动翻译支持的语言）：`en`、`es`、`pt`、`ru`、`id`、`fr`、`de`、`ko`、`ja`、`it`、`tr`、`ar`、`th`、`vi`、`pl`、`zh-hans`、`zh-hant`、`hi`。Roblox 未公开各语言用户比例，清单顺序只是估算。`read` 默认只输出这些语言及其地区版本，不请求 Roblox 语言目录；`read --all` 实时获取全部创作者语言。输出区分游戏已启用语言、返回的译文和未返回的内容。需要有效 API Key，英文原文通过 Cloud Universe 接口读取，私有游戏也可查询。
 
 ```sh
 rbx localization read "Example Game"
+rbx localization read "Example Game" --all
 rbx --json localization read 123
 rbx localization write "Example Game" --file ./translations.json --dry-run
 rbx --json localization write "Example Game" --file ./translations.json
@@ -464,7 +465,7 @@ rbx --json localization write "Example Game" --file ./translations.json
 
 可以一次提交全部译文，也可以只修正一个语言的标题。未提供的语言、标题或简介均保留。字段只支持 `title` 和 `description` 字符串，不接受 `null`、删除指令或 `read` 的完整 JSON 输出信封；读取结果需要先整理为上述编辑文件。源语言（例如 `en`）仍使用同一个 `localization write` 命令：CLI 从 Cloud Universe 返回的 `rootPlace` 定位根 Place，再通过 Cloud Update Place 的字段掩码接口修改 `displayName` 和／或 `description`，需要对应根 Place 的写权限。不能直接修改 Universe 的 `displayName` 代替根 Place 更新，该操作可能返回成功却不改变源标题。其他译文、支持语言管理使用 `legacy-game-internationalization` 接口，最终由 Roblox 校验 Key 和资源权限。译文标题与简介分开提交，单批最多 25 个语言。
 
-语言代码与地区代码不同：`en` 是英文通用版本，`en-gb`/`en_gb` 是英国版本。英文、法文、葡萄牙文、西班牙文支持独立地区覆盖；其他地区代码输入会映射到对应语言通用版本，例如 `ja-jp` → `ja`。别名冲突会在写入前拒绝；源语言默认地区不能作为覆盖项（例如源语言是 `en` 时，使用 `en` 修改原文，不能用 `en-us` 覆盖）。额外返回的历史语言记录保留在 `translations` 中，不丢弃。
+语言代码与地区代码不同：`en` 是英文通用版本，`en-gb`/`en_gb` 是英国版本。英文、法文、葡萄牙文、西班牙文支持独立地区覆盖；其他地区代码输入会映射到对应语言通用版本，例如 `ja-jp` → `ja`。别名冲突会在写入前拒绝；源语言默认地区不能作为覆盖项（例如源语言是 `en` 时，使用 `en` 修改原文，不能用 `en-us` 覆盖）。`write` 拒绝白名单外的语言，整条命令在提交前报错；游戏的源语言不在白名单内时仍可读写。默认 `read` 隐藏白名单外的线上译文，`read --all` 和写入备份保留这些记录，线上内容不受影响。
 
 写入时自动添加本次所需、尚未启用的支持语言，并回读确认；地区覆盖依附于对应语言组，例如写 `fr-ca` 时检查并按需添加 `fr`，不向支持语言接口添加 `Locale`（该接口会拒绝）。对新增语言明确关闭标题/简介自动翻译，不主动开启任何自动翻译。已有语言的自动翻译开关保持原样，手动译文优先展示。新增语言或其中一个字段失败会单独报告，其他字段继续处理；添加成功的语言不会因后续译文失败而自动移除。`--dry-run` 只读取、校验并预览字段和待添加语言，不添加语言、不写入、不生成备份，也不能证明写入权限。
 
@@ -491,7 +492,7 @@ await localization.write('123', { ja: { title: 'サンプルゲーム' } }, {
 本地化表以 Studio 中的 ModuleScript 为唯一来源：主表 `本地化表` 存英文原文和简体中文（由人或 Agent 维护，CLI 只读），子模块 `本地化表.<语言代码>` 存其他语言（每行 `["英文原文"] = "译文",`，顺序与主表一致，由 CLI 生成）。英文原文逐字作为主键。云端只接收单向推送：只处理无 Key、无 Context 的通用条目，只新增和修改，从不删除。
 
 ```bash
-# 新游戏：源语言设为 en，启用全部语言并开启自动翻译，使用翻译表、开启自动采集文本、关闭自动删除（幂等）
+# 新游戏：源语言设为 en，启用 18 种固定语言并开启自动翻译，使用翻译表、开启自动采集文本、关闭自动删除（幂等）
 rbx localization enable "Ball VS Ball" --dry-run
 rbx localization enable 123 456
 
@@ -517,11 +518,13 @@ rbx localization show "Leave" --source-file ./本地化表.rbxm
 
 `sync` 的流程：
 1. 每个目标游戏必须已开启本地化（源语言 en、使用翻译表），否则报错并提示先运行 `enable`，不翻译、不写入。
-2. 读取各游戏已启用语言的并集，找出本地缺失的「原文 × 语言」。zh-hans 来自主表，不翻译。
+2. 读取各游戏已启用语言的并集，与 18 种固定语言取交集，找出本地缺失的「原文 × 语言」。zh-hans 来自主表，不翻译。白名单外已启用的语言留在线上，云端译文保留，但不再翻译和推送。
 3. DeepSeek 翻译：连续原文 × 一组语言为一批（默认每批不超过 120 个译文，12 种语言一组），默认 8 路并发（`--concurrency`）。逐条校验占位符（`{a:int}`）和标签（`<font>`），不合格的单独重试两次，仍失败则不写入并列在 warnings。译文同时写入应用数据目录 `localization-cache/translations.jsonl`，中断后重跑不重复付费。
-4. 写出完整的本地化表 `.rbxm`（默认 `<source>.synced.rbxm`），根模块名为 `本地化表__sync`；不再被主表引用的旧译文会被清理。
+4. 写出本地化表 `.rbxm`（默认 `<source>.synced.rbxm`），根模块名为 `本地化表__sync`；不再被主表引用的旧译文会被清理，白名单外的语言子模块会被删除，删除的语言和译文数会输出（`--dry-run` 只预览）。`--out` 指向源文件时会覆盖原表。
 5. 逐个游戏推送该游戏启用语言中与云端不一致的译文：推送前把云端全部条目备份到 `localization-backups/`，按 `maxEntriesPerUpdate` 分批；一个游戏失败不影响其他游戏。原文超过 `maxSourceLength`（目前 300）会被跳过并报告。
 6. 输出摘要：各语言新译文数、模型和 token 用量、每个游戏新增/修改/被拒数量。
+
+`enable` 只处理 18 种固定语言，已启用的其他语言及其自动翻译开关保持原样。`import` 只导入固定语言，其他语言计入跳过统计。
 
 写回 Studio：`import_rbxm` 把输出文件导入到本地化表所在的父级，再用 `execute_luau` 执行输出中的 `studioSwapLuau`。它比较新旧主表的 Source，一致才删除旧表并把新表改名，不一致则丢弃导入，需要重新导出并 sync。
 

@@ -5,7 +5,9 @@ export { Experiments, parseExperimentDefinition } from './experiments/experiment
 export type { ExperimentDefinition, ExperimentVariant, ExperimentOperation, ExperimentWriteOptions, ExperimentWaitOptions } from './experiments/experiments.js';
 export type { WriteOptions, WriteReceipt, CloudRequest, JsonObject } from './cloud/common.js';
 export { GameInfoLocalization, parseGameInfoTranslations } from './localization/game-info.js';
-export type { GameInfoTranslation, GameInfoTranslations, GameInfoLocale, GameInfoLanguage, GameInfoSnapshot, GameInfoWriteOptions, GameInfoWriteResult } from './localization/game-info.js';
+export { SUPPORTED_LANGUAGES, SUPPORTED_LANGUAGE_CODES, isSupportedLanguage } from './localization/languages.js';
+export type { SupportedLanguage, SupportedLocale } from './localization/languages.js';
+export type { GameInfoTranslation, GameInfoTranslations, GameInfoLocale, GameInfoLanguage, GameInfoSnapshot, GameInfoReadOptions, GameInfoWriteOptions, GameInfoWriteResult } from './localization/game-info.js';
 export { GroupRoles, groupPlayerInput } from './groups/roles.js';
 export type { GroupRole, GroupMember, RoleSelector } from './groups/roles.js';
 export { UserRestrictions, banBody } from './moderation/restrictions.js';

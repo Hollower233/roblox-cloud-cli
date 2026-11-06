@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AppError, errorInfo, id } from '../core/errors.js';
 import { HttpClient } from '../transport/http-client.js';
+import { SUPPORTED_LANGUAGES, isSupportedLanguage } from './languages.js';
 
 const publicBase = 'https://gameinternationalization.roblox.com/v1';
 const cloudBase = 'https://apis.roblox.com/legacy-game-internationalization/v1';
@@ -23,6 +24,7 @@ export interface GameInfoSnapshot {
   languages: GameInfoLanguage[];
   translations: { languageCode: string; title: string | null; description: string | null }[];
 }
+export interface GameInfoReadOptions { all?: boolean }
 export interface GameInfoWriteOptions {
   dryRun?: boolean; backupDirectory?: string; signal?: AbortSignal;
 }
@@ -50,6 +52,12 @@ function apiCode(value: unknown): string {
 }
 function nullable(value: unknown): string | null { return value === null ? null : string(value); }
 function code(value: string): string { return value.trim().toLowerCase().replaceAll('-', '_'); }
+interface CatalogLocale { languageCode: string; languageName: string; nativeName: string; localeCode: string; localeName: string }
+const fixedCatalog: CatalogLocale[] = SUPPORTED_LANGUAGES.flatMap(language => language.locales.map(locale => ({
+  languageCode: language.code, languageName: language.name, nativeName: language.nativeName, localeCode: locale.code, localeName: locale.name })));
+const fixedLocales = new Set(fixedCatalog.map(row => row.localeCode));
+// Roblox returns this regional target for Simplified Chinese outside the creator catalog.
+const inScope = (target: string) => isSupportedLanguage(target) || fixedLocales.has(target) || target === 'zh_cjv';
 
 /** Accept a language-keyed object, never a read-result envelope or implicit deletes. */
 export function parseGameInfoTranslations(value: unknown): GameInfoTranslations {
@@ -109,28 +117,44 @@ export class GameInfoLocalization {
     return path;
   }
 
-  async read(universeId: string): Promise<GameInfoSnapshot> {
+  private async liveCatalog(): Promise<CatalogLocale[]> {
+    const d = object(await this.http.request('https://locale.roblox.com/v1/locales/supported-locales-for-creators'));
+    return rows(d.data).map(value => {
+      const locale = object(object(value).locale), family = object(locale.language);
+      return { languageCode: apiCode(family.languageCode), languageName: string(family.name), nativeName: string(family.nativeName), localeCode: apiCode(locale.locale), localeName: string(locale.name) };
+    });
+  }
+
+  /** The 18 fixed languages by default; `all` fetches and shows Roblox's live creator catalog. */
+  async read(universeId: string, options: GameInfoReadOptions = {}): Promise<GameInfoSnapshot> {
+    const snapshot = await this.snapshot(universeId, Boolean(options.all));
+    if (options.all) return snapshot;
+    return { ...snapshot, translations: snapshot.translations.filter(row => inScope(row.languageCode) || row.languageCode === snapshot.source.languageCode) };
+  }
+
+  /** Keeps every returned translation, so write backups cover languages outside the fixed list. */
+  private async snapshot(universeId: string, all: boolean): Promise<GameInfoSnapshot> {
     id(universeId);
     const [catalog, sourceLanguage, source, configured, translations] = await Promise.all([
-      this.http.request('https://locale.roblox.com/v1/locales/supported-locales-for-creators'),
+      all ? this.liveCatalog() : fixedCatalog,
       this.http.request(`${publicBase}/source-language/games/${universeId}`),
       this.source(universeId), this.configured(universeId), this.text(universeId),
     ]);
     const sourceCode = apiCode(object(sourceLanguage).languageCode);
     const languages = new Map<string, GameInfoLanguage>();
     const localeCodes = new Set<string>();
-    for (const value of rows(object(catalog).data)) {
-      const locale = object(object(value).locale), family = object(locale.language);
-      const languageCode = apiCode(family.languageCode), localeCode = apiCode(locale.locale);
+    // A game may keep a source language outside the fixed list; it must stay readable and writable.
+    const entries = all || isSupportedLanguage(sourceCode) ? catalog : [...catalog, { languageCode: sourceCode, languageName: sourceCode, nativeName: sourceCode, localeCode: sourceCode, localeName: sourceCode }];
+    for (const { languageCode, languageName, nativeName, localeCode, localeName } of entries) {
       if (localeCodes.has(localeCode)) throw new AppError('INVALID_RESPONSE', 'Duplicate locale response.');
       localeCodes.add(localeCode);
       if (!languages.has(languageCode)) {
         const current = translations.find(row => row.languageCode === languageCode);
-        languages.set(languageCode, { languageCode, name: string(family.name), nativeName: string(family.nativeName), enabled: configured.has(languageCode),
+        languages.set(languageCode, { languageCode, name: languageName, nativeName, enabled: configured.has(languageCode),
           title: languageCode === sourceCode ? source.title : current?.title ?? null,
           description: languageCode === sourceCode ? source.description : current?.description ?? null, locales: [] });
       }
-      languages.get(languageCode)!.locales.push({ localeCode, name: string(locale.name), targetCode: localeCode,
+      languages.get(languageCode)!.locales.push({ localeCode, name: localeName, targetCode: localeCode,
         enabled: configured.has(localeCode) || configured.has(languageCode), title: translations.find(row => row.languageCode === localeCode)?.title ?? null,
         description: translations.find(row => row.languageCode === localeCode)?.description ?? null });
     }
@@ -149,7 +173,7 @@ export class GameInfoLocalization {
     id(universeId);
     const checkAbort = () => { if (options.signal?.aborted) throw new AppError('CANCELLED', 'Operation cancelled.'); };
     checkAbort();
-    const translations = parseGameInfoTranslations(input), before = await this.read(universeId);
+    const translations = parseGameInfoTranslations(input), before = await this.snapshot(universeId, false);
     const aliases = new Map<string, string>();
     const parents = new Map<string, string>();
     for (const language of before.languages) {
@@ -160,13 +184,13 @@ export class GameInfoLocalization {
         parents.set(locale.targetCode, language.languageCode);
       }
     }
-    for (const row of before.translations) if (!aliases.has(code(row.languageCode))) aliases.set(code(row.languageCode), row.languageCode);
+    for (const row of before.translations) if (inScope(row.languageCode) && !aliases.has(code(row.languageCode))) aliases.set(code(row.languageCode), row.languageCode);
     if (aliases.has('zh_cjv') && parents.has('zh-hans')) parents.set('zh_cjv', 'zh-hans');
     const result: GameInfoWriteResult = { universeId, dryRun: Boolean(options.dryRun), addedLanguages: [], results: [] };
     const targets = new Set<string>();
     for (const [alias, fields] of Object.entries(translations)) {
       const languageCode = aliases.get(code(alias));
-      if (!languageCode) throw new AppError('ARGUMENT_ERROR', `Language is absent from the Roblox creator catalog: ${alias}.`);
+      if (!languageCode) throw new AppError('ARGUMENT_ERROR', `Language is outside the ${SUPPORTED_LANGUAGES.length} supported languages: ${alias}.`);
       if (targets.has(languageCode)) throw new AppError('ARGUMENT_ERROR', `Multiple inputs refer to ${languageCode}. Use one entry per target.`);
       targets.add(languageCode);
       const sourceLocale = ({ en: 'en_us', fr: 'fr_fr', pt: 'pt_br', es: 'es_es' } as Record<string, string>)[before.source.languageCode];

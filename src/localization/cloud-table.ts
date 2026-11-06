@@ -1,5 +1,6 @@
 import { AppError, errorInfo, id } from '../core/errors.js';
 import { HttpClient } from '../transport/http-client.js';
+import { SUPPORTED_LANGUAGE_CODES, isSupportedLanguage } from './languages.js';
 
 const tables = 'https://apis.roblox.com/legacy-localization-tables/v1';
 const intl = 'https://apis.roblox.com/legacy-game-internationalization/v1';
@@ -34,12 +35,6 @@ export class CloudLocalizationTable {
   async supportedLanguages(universeId: string): Promise<string[]> {
     const d = object(await this.http.request(`${publicIntl}/supported-languages/games/${id(universeId)}`));
     return array(d.data).filter(row => object(row).languageCodeType === 'Language').map(row => String(row.languageCode));
-  }
-
-  /** Every language family Roblox offers to creators. */
-  async availableLanguages(): Promise<string[]> {
-    const d = object(await this.http.request('https://locale.roblox.com/v1/locales/supported-locales-for-creators'));
-    return [...new Set(array(d.data).map(row => String(object(object(object(row).locale).language).languageCode)))].sort();
   }
 
   async automaticTranslation(universeId: string): Promise<Map<string, boolean>> {
@@ -152,7 +147,7 @@ export interface EnableResult {
   failures: { step: string; error: string }[];
 }
 
-/** Idempotent: source=en, all languages enabled + auto-translated, table used, ATC on, auto-deletion off. */
+/** Idempotent: source=en, the fixed languages enabled + auto-translated, table used, ATC on, auto-deletion off. Other enabled languages stay untouched. */
 export async function enableLocalization(cloud: CloudLocalizationTable, universeId: string, options: { dryRun?: boolean } = {}): Promise<EnableResult> {
   const result: EnableResult = { universeId, dryRun: Boolean(options.dryRun), changes: [], warnings: [], failures: [] };
   const step = async (name: string, action: () => Promise<void>) => {
@@ -166,11 +161,11 @@ export async function enableLocalization(cloud: CloudLocalizationTable, universe
     if (existing.length) result.warnings.push(`源语言原为 ${source}，且已启用 ${existing.length} 种其他语言；改为 en 后，原有译文可能需要复查。`);
     await step(`源语言 ${source} → en`, () => cloud.setSourceLanguage(universeId, 'en'));
   }
-  const [available, supported] = await Promise.all([cloud.availableLanguages(), cloud.supportedLanguages(universeId)]);
-  const missing = available.filter(code => !supported.includes(code));
+  const supported = await cloud.supportedLanguages(universeId);
+  const missing = SUPPORTED_LANGUAGE_CODES.filter(code => !supported.includes(code));
   if (missing.length) await step(`启用 ${missing.length} 种语言：${missing.join(', ')}`, () => cloud.addLanguages(universeId, missing));
   const automatic = options.dryRun ? new Map<string, boolean>() : await cloud.automaticTranslation(universeId);
-  const targets = available.filter(code => code !== 'en' && automatic.get(code) !== true);
+  const targets = SUPPORTED_LANGUAGE_CODES.filter(code => code !== 'en' && automatic.get(code) !== true);
   const turnedOn: string[] = [];
   for (const code of targets) {
     if (options.dryRun) { turnedOn.push(code); continue; }
@@ -196,5 +191,5 @@ export async function requireEnabled(cloud: CloudLocalizationTable, universeId: 
   if (source !== 'en') throw new AppError('ARGUMENT_ERROR', `Game ${universeId} source language is ${source}; run rbx localization enable ${universeId} first.`);
   const settings = await cloud.settings(universeId);
   if (!settings.shouldUseLocalizationTable) throw new AppError('ARGUMENT_ERROR', `Game ${universeId} does not use its localization table; run rbx localization enable ${universeId} first.`);
-  return { settings, languages: (await cloud.supportedLanguages(universeId)).filter(code => code !== 'en') };
+  return { settings, languages: (await cloud.supportedLanguages(universeId)).filter(code => code !== 'en' && isSupportedLanguage(code)) };
 }

@@ -5,20 +5,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { GameInfoLocalization, parseGameInfoTranslations, type GameInfoTranslations } from '../src/localization/game-info.js';
+import { SUPPORTED_LANGUAGE_CODES } from '../src/localization/languages.js';
 import { HttpClient } from '../src/transport/http-client.js';
 
-function fixture(options: { rejectDescription?: boolean; lost?: boolean; denied?: boolean; noEffect?: boolean; sourceDenied?: boolean; sourceNoEffect?: boolean; rootPlace?: string; addFails?: boolean; nullEmpty?: boolean; malicious?: boolean; delayed?: boolean; extraLanguages?: boolean; cancelAfterAdd?: AbortController } = {}) {
+function fixture(options: { sourceLanguage?: string;  rejectDescription?: boolean; lost?: boolean; denied?: boolean; noEffect?: boolean; sourceDenied?: boolean; sourceNoEffect?: boolean; rootPlace?: string; addFails?: boolean; nullEmpty?: boolean; malicious?: boolean; delayed?: boolean; cancelAfterAdd?: AbortController } = {}) {
   const locales = [
     ['en', 'English', 'en_us'], ['en', 'English', 'en_gb'], ['ja', 'Japanese', 'ja_jp'],
     ['hi', 'Hindi', 'hi_in'], ['fr', 'French', 'fr_fr'], ['fr', 'French', 'fr_ca'],
   ];
-  if (options.extraLanguages) for (const letter of 'abcdefghijklmnopqrstuvwxyz') locales.push([`q${letter}`, `Fictional ${letter}`, `q${letter}_xx`]);
   const supported = new Set(['en', 'ja']);
   const source = { displayName: 'Example', description: 'Source description' };
   const texts = new Map<string, { name: string | null; description: string | null }>([
     ['en', { name: source.displayName, description: source.description }],
     ['ja', { name: 'Original Japanese', description: 'Original description' }],
     ['zh_cjv', { name: 'Extra response', description: null }],
+    ['nl', { name: 'Dutch title', description: null }],
   ]);
   const calls: { url: URL; method: string; body: any }[] = [];
   let textReads = 0;
@@ -27,7 +28,7 @@ function fixture(options: { rejectDescription?: boolean; lost?: boolean; denied?
     calls.push({ url, method, body });
     assert.equal(new Headers(init?.headers).get('x-api-key'), url.host === 'apis.roblox.com' ? 'fake-key' : null);
     if (url.host === 'locale.roblox.com') return Response.json({ data: locales.map(([languageCode, name, locale]) => ({ locale: { locale, name, language: { languageCode, name, nativeName: name } } })) });
-    if (url.pathname.includes('source-language')) return Response.json({ languageCode: 'en' });
+    if (url.pathname.includes('source-language')) return Response.json({ languageCode: options.sourceLanguage ?? 'en' });
     if (url.pathname === '/cloud/v2/universes/1') {
       assert.equal(method, 'GET', 'source writes must target the root place, not the universe');
       return Response.json({ ...source, rootPlace: options.rootPlace ?? 'universes/1/places/99' });
@@ -80,9 +81,31 @@ function fixture(options: { rejectDescription?: boolean; lost?: boolean; denied?
   return { client, calls, texts, source, supported };
 }
 
-test('read includes all creator languages/locales, missing values, source and extra translations', async () => {
-  const { client } = fixture();
+test('read uses the 18 fixed languages without the catalog request and hides other translations', async () => {
+  const { client, calls } = fixture();
   const result = await client.read('1');
+  assert.deepEqual(result.languages.map(row => row.languageCode).sort(), [...SUPPORTED_LANGUAGE_CODES].sort());
+  assert.equal(SUPPORTED_LANGUAGE_CODES.length, 18);
+  assert.equal(calls.some(row => row.url.host === 'locale.roblox.com'), false);
+  assert.deepEqual(result.languages.find(row => row.languageCode === 'fr')!.locales.map(row => row.targetCode), ['fr_ca', 'fr_fr']);
+  assert.ok(result.translations.some(row => row.languageCode === 'zh_cjv'));
+  assert.equal(result.translations.some(row => row.languageCode === 'nl'), false);
+});
+
+test('read keeps a source language outside the fixed list readable and writable', async () => {
+  const { client, source } = fixture({ sourceLanguage: 'nl' });
+  const read = await client.read('1');
+  assert.equal(read.languages.find(row => row.languageCode === 'nl')!.title, 'Example');
+  assert.equal(read.languages.length, 19);
+  const result = await client.write('1', { nl: { title: 'Nieuw' } });
+  assert.equal(result.results[0]!.status, 'success');
+  assert.equal(source.displayName, 'Nieuw');
+});
+
+test('read --all includes the live creator catalog, missing values, source and extra translations', async () => {
+  const { client, calls } = fixture();
+  const result = await client.read('1', { all: true });
+  assert.equal(calls.filter(row => row.url.host === 'locale.roblox.com').length, 1);
   assert.equal(result.languages.length, 4);
   assert.equal(result.languages.reduce((n, language) => n + language.locales.length, 0), 6);
   assert.deepEqual(result.source, { languageCode: 'en', title: 'Example', description: 'Source description' });
@@ -90,6 +113,15 @@ test('read includes all creator languages/locales, missing values, source and ex
   assert.equal(result.languages.find(row => row.languageCode === 'hi')!.enabled, false);
   assert.equal(result.languages.find(row => row.languageCode === 'ja')!.locales[0]!.targetCode, 'ja');
   assert.ok(result.translations.some(row => row.languageCode === 'zh_cjv'));
+  assert.ok(result.translations.some(row => row.languageCode === 'nl'));
+});
+
+test('write rejects languages outside the fixed list before any change, even with an existing translation', async () => {
+  for (const input of [{ nl: { title: 'X' } }, { fi: { title: 'X' } }, { ja: { title: 'Y' }, nl: { title: 'X' } }] as GameInfoTranslations[]) {
+    const { client, calls } = fixture();
+    await assert.rejects(client.write('1', input, { backupDirectory: 'not-created' }), /outside the 18 supported languages/);
+    assert.equal(calls.some(row => row.method !== 'GET'), false);
+  }
 });
 
 test('write targets only provided fields and adds missing languages without enabling automatic translation', async () => {
@@ -215,6 +247,7 @@ test('backups precede writes and contain the original values', async () => {
     const backup = JSON.parse(await readFile(result.backupPath!, 'utf8'));
     assert.equal(backup.before.languages.find((row: any) => row.languageCode === 'ja').title, 'Original Japanese');
     assert.deepEqual(backup.requested, { ja: { title: 'New' } });
+    assert.ok(backup.before.translations.some((row: any) => row.languageCode === 'nl'), 'backups keep languages outside the fixed list');
     assert.equal((await readdir(directory)).length, 1);
     const occupied = join(directory, 'occupied');
     await writeFile(occupied, 'not a directory');
@@ -224,13 +257,14 @@ test('backups precede writes and contain the original values', async () => {
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('batches split at 25 unique languages per field', async () => {
-  const { client, calls } = fixture({ extraLanguages: true });
-  const input = Object.fromEntries([...'abcdefghijklmnopqrstuvwxyz'].map(letter => [`q${letter}`, { title: `Title ${letter}`, description: `Description ${letter}` }]));
+test('every fixed language and regional override fits one batch per field', async () => {
+  const { client, calls } = fixture();
+  const targets = [...SUPPORTED_LANGUAGE_CODES.filter(code => code !== 'en'), 'en_gb', 'es_es', 'es_mx', 'fr_ca', 'fr_fr', 'pt_br', 'pt_pt', 'zh_cjv'];
+  const input = Object.fromEntries(targets.map(code => [code, { title: `Title ${code}`, description: `Description ${code}` }]));
   const result = await client.write('1', input);
   assert.ok(result.results.every(row => row.status === 'success'));
   const batches = calls.filter(row => row.method === 'PATCH' && row.url.pathname.includes('name-description'));
-  assert.deepEqual(batches.map(row => row.body.data.length), [25, 1, 25, 1]);
+  assert.deepEqual(batches.map(row => row.body.data.length), [25, 25]);
 });
 
 test('SDK cancellation after adding a language prevents subsequent field mutations', async () => {

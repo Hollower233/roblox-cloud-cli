@@ -7,6 +7,7 @@ import { readRbxm, writeRbxm } from '../src/localization/rbxm.js';
 import { languageModuleSource, luaString, parseLanguageSource, parseMasterSource } from '../src/localization/lua-table.js';
 import { LocalizationTable, studioSwapLuau } from '../src/localization/table.js';
 import { CloudLocalizationTable, enableLocalization } from '../src/localization/cloud-table.js';
+import { SUPPORTED_LANGUAGE_CODES } from '../src/localization/languages.js';
 import { syncLocalization, importFromCloud } from '../src/localization/sync.js';
 import { DeepSeekClient, checkTranslation, translate, TranslationCache } from '../src/translation/deepseek.js';
 import { HttpClient } from '../src/transport/http-client.js';
@@ -109,7 +110,7 @@ function robloxFake(options: { source?: string; useTable?: boolean } = {}) {
   const http = new HttpClient({ apiKey: 'fake', intervalMs: 0, retries: 0, fetch: (async (input, init) => {
     const url = new URL(String(input)), method = init?.method ?? 'GET', body = init?.body ? JSON.parse(String(init.body)) : undefined;
     if (method !== 'GET' && !url.pathname.endsWith('/autolocalizationtable')) state.writes.push(`${method} ${url.pathname}`);
-    if (url.host === 'locale.roblox.com') return Response.json({ data: ['en', 'ja', 'zh-hans', 'fr'].map(code => ({ locale: { locale: code + '_x', language: { languageCode: code } } })) });
+    assert.notEqual(url.host, 'locale.roblox.com', 'the language catalog is fixed');
     if (url.pathname.endsWith('/source-language/games/1')) { if (method === 'PATCH') state.source = url.searchParams.get('languageCode')!; return Response.json({ languageCode: state.source }); }
     if (url.pathname.endsWith('/supported-languages/games/1')) { if (method === 'PATCH') for (const row of body) state.supported.add(row.languageCode); return Response.json({ data: [...state.supported].map(languageCode => ({ languageCode, languageCodeType: 'Language' })) }); }
     if (url.pathname.endsWith('/automatic-translation-status') && method === 'GET') return Response.json({ data: [...state.supported].map(languageCode => ({ languageCode, languageCodeType: 'Language', isAutomaticTranslationEnabled: state.auto.get(languageCode) ?? false })) });
@@ -143,6 +144,17 @@ test('enable is idempotent and fixes source, languages, auto-translation and set
   assert.deepEqual(second.changes, []); assert.equal(state.writes.length, writes);
 });
 
+test('enable covers only the fixed languages and leaves other enabled languages alone', async () => {
+  const { state, cloud } = robloxFake();
+  state.supported.add('nl');
+  await enableLocalization(cloud, '1');
+  assert.deepEqual([...state.supported].filter(code => code !== 'nl').sort(), [...SUPPORTED_LANGUAGE_CODES].sort());
+  assert.ok(state.supported.has('nl'));
+  assert.equal(state.auto.has('nl'), false);
+  assert.ok(SUPPORTED_LANGUAGE_CODES.filter(code => code !== 'en').every(code => state.auto.get(code) === true));
+  assert.equal(state.writes.some(write => write.includes('/languages/nl/')), false);
+});
+
 test('sync refuses games that are not enabled', async () => {
   const { cloud } = robloxFake({ useTable: false });
   await assert.rejects(syncLocalization(LocalizationTable.fromRbxm(tableFile([['A', '甲']])), ['1'], cloud, { out: 'x', backupDirectory: 'y' }), /localization enable/);
@@ -167,6 +179,38 @@ test('sync translates missing locales, writes the table and pushes add/modify on
     assert.ok(game.backupPath);
     const dry = await syncLocalization(LocalizationTable.fromRbxm(tableFile([['A', '甲']])), ['1'], cloud, { out: join(dir, 'dry.rbxm'), backupDirectory: join(dir, 'b'), dryRun: true });
     assert.equal(dry.out, undefined); assert.equal(state.patches.length, 2);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('sync skips languages outside the fixed list and removes them from the written table only', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'rbx-sync-'));
+  try {
+    const { state, cloud } = robloxFake();
+    state.supported.add('nl');
+    const { client } = deepseekFake(items => Object.fromEntries(items.map((item: any) => [item.id, Object.fromEntries(item.to.map((l: string) => [l, `${l}-${item.en}`]))])));
+    const file = tableFile([['A', '甲']], { ja: [['A', 'あ']], nl: [['A', 'a-nl']], fi: [['A', 'a-fi']] });
+    const dry = await syncLocalization(LocalizationTable.fromRbxm(file), ['1'], cloud, { out: join(dir, 'dry.rbxm'), backupDirectory: join(dir, 'b'), dryRun: true });
+    assert.deepEqual(dry.removedLanguages, { fi: 1, nl: 1 });
+    assert.equal(dry.locales.includes('nl'), false);
+    const table = LocalizationTable.fromRbxm(file);
+    const result = await syncLocalization(table, ['1'], cloud, { out: join(dir, 'out.rbxm'), backupDirectory: join(dir, 'b'), translator: { client, model: 'deepseek-chat' } });
+    assert.deepEqual(result.removedLanguages, { fi: 1, nl: 1 });
+    assert.deepEqual(readRbxm(await readFile(result.out!))[0]!.children.map(child => child.name), ['ja']);
+    assert.equal(result.games[0]!.languages, 2);
+    assert.ok(state.patches.every(p => p.entries.every((e: any) => e.translations.every((t: any) => t.locale !== 'nl' && t.delete === undefined))));
+    assert.ok(state.supported.has('nl'), 'cloud languages stay enabled');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('import skips languages outside the fixed list', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'rbx-imp-'));
+  try {
+    const { cloud, state } = robloxFake();
+    state.entries[0].translations.push({ locale: 'nl', translationText: 'a-nl', translator: { agentType: 'User' } });
+    const table = LocalizationTable.fromRbxm(tableFile([['A', '甲']]));
+    const result = await importFromCloud(table, '1', cloud, { out: join(dir, 'o.rbxm') });
+    assert.deepEqual(result.skippedLocales, { nl: 1 });
+    assert.equal(table.get('A', 'nl'), undefined);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

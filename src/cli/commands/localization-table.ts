@@ -33,7 +33,7 @@ export function registerLocalizationTable(program: Command, localization: Comman
       emit({ out, name: table.name, parent: options.parent }, json(), `空本地化表：${out}\n导入 Studio：import_rbxm 到 ${options.parent}（不存在先建 Folder），得到 ${options.parent}[${JSON.stringify(table.name)}]；按表头在 return { 之后逐条写入 { en = "...", zh = "..." }，语言子模块由 sync 生成。`);
     });
 
-  localization.command('enable <games...>').description('Turn on game localization: source en, all languages + auto-translation, table in use, ATC on, auto-deletion off (idempotent)')
+  localization.command('enable <games...>').description('Turn on game localization: source en, the 18 supported languages + auto-translation, table in use, ATC on, auto-deletion off (idempotent)')
     .option('--dry-run', 'Show what would change without writing')
     .action(async (inputs: string[], options) => {
       const results = [];
@@ -45,7 +45,7 @@ export function registerLocalizationTable(program: Command, localization: Comman
       emit(results, json(), results.map(r => `游戏 ${r.universeId}${r.dryRun ? '（预览）' : ''}：${r.changes.length ? '\n  ' + r.changes.map(clean).join('\n  ') : '已全部符合，无改动'}${r.warnings.map(w => `\n  ⚠ ${clean(w)}`).join('')}`).join('\n'), warnings);
     });
 
-  localization.command('sync <games...>').description('Translate missing locales with DeepSeek, write the full table .rbxm, then push add/modify to each game')
+  localization.command('sync <games...>').description('Translate missing supported languages with DeepSeek, write the .rbxm without other languages, then push add/modify to each game')
     .requiredOption('--source <rbxm>', 'Localization table exported from Studio (export_rbxm)')
     .option('--out <rbxm>', 'Output .rbxm (default: <source>.synced.rbxm)')
     .option('--retranslate <source...>', 'Exact English sources to translate again for all locales')
@@ -83,6 +83,7 @@ export function registerLocalizationTable(program: Command, localization: Comman
         ...(result.model ? [`模型：${result.model}；请求 ${result.usage!.requests} 次，输入 ${result.usage!.promptTokens} tokens（缓存命中 ${result.usage!.cacheHitTokens}），输出 ${result.usage!.completionTokens} tokens`] : []),
         ...(result.translationFailures.length ? [`翻译失败：${result.translationFailures.length}（未写入）`] : []),
         ...(result.removedOrphans ? [`清理已不在主表中的旧译文：${result.removedOrphans}`] : []),
+        ...(Object.keys(result.removedLanguages).length ? [`${result.dryRun ? '将从本地表删除' : '已从本地表删除'}白名单外语言：${Object.entries(result.removedLanguages).map(([k, v]) => `${k} ${v}`).join(', ')}`] : []),
         ...result.games.map(g => `游戏 ${g.universeId}：${g.error ? `失败 ${clean(g.error)}` : `新增 ${g.added}，修改 ${g.modified}${g.failed.length ? `，被拒 ${g.failed.length}` : ''}${g.backupPath ? `；备份 ${g.backupPath}` : ''}`}`),
         ...(result.out ? [`本地化表：${result.out}${swapHint(table.name, options.parent)}`] : []),
       ];
@@ -99,7 +100,7 @@ export function registerLocalizationTable(program: Command, localization: Comman
       const { universeId, cloud: client } = await cloud(input);
       const result = await importFromCloud(table, universeId, client, { out: options.out ?? defaultOut(options.source), humanOnly: Boolean(options.humanOnly), signal: context.signal });
       const total = Object.values(result.imported).reduce((a, b) => a + b, 0);
-      emit({ ...result, studioSwapLuau: studioSwapLuau(options.parent, table.name) }, json(), `从游戏 ${universeId} 导入 ${total} 个译文${result.skippedAutomatic ? `，跳过自动译文 ${result.skippedAutomatic}` : ''}${Object.keys(result.skippedLocales).length ? `，跳过地区代码 ${Object.entries(result.skippedLocales).map(([k, v]) => `${k} ${v}`).join(', ')}` : ''}\n${Object.entries(result.imported).map(([k, v]) => `${k} ${v}`).join(', ')}\n本地化表：${result.out}${swapHint(table.name, options.parent)}`);
+      emit({ ...result, studioSwapLuau: studioSwapLuau(options.parent, table.name) }, json(), `从游戏 ${universeId} 导入 ${total} 个译文${result.skippedAutomatic ? `，跳过自动译文 ${result.skippedAutomatic}` : ''}${Object.keys(result.skippedLocales).length ? `，跳过地区代码或白名单外语言 ${Object.entries(result.skippedLocales).map(([k, v]) => `${k} ${v}`).join(', ')}` : ''}\n${Object.entries(result.imported).map(([k, v]) => `${k} ${v}`).join(', ')}\n本地化表：${result.out}${swapHint(table.name, options.parent)}`);
     });
 
   localization.command('export').description('Export the local table .rbxm as JSON (en, zh-hans and every locale)')

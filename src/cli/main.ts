@@ -125,12 +125,13 @@ async function localizationClient(input: string) {
   const key = await new CredentialStore(local.home).get();
   return { local, universeId, client: new GameInfoLocalization(new HttpClient({ apiKey: key, signal: abort.signal })) };
 }
-localization.command('read <universe>').description('Read the complete Roblox creator language catalog and current game titles/descriptions')
-  .action(async (input: string) => {
-    const { universeId, client } = await localizationClient(input), result = await client.read(universeId);
+localization.command('read <universe>').description('Read current game titles/descriptions for the 18 supported languages')
+  .option('--all', 'Fetch the complete live Roblox language catalog instead of the supported list')
+  .action(async (input: string, options) => {
+    const { universeId, client } = await localizationClient(input), result = await client.read(universeId, { all: Boolean(options.all) });
     emit(result, json(), renderLocalization(result));
   });
-localization.command('write <universe>').description('Write selected game-info fields; add required supported languages and verify each field')
+localization.command('write <universe>').description('Write selected game-info fields for the 18 supported languages; add required languages and verify each field')
   .requiredOption('--file <path>', 'UTF-8 JSON object keyed by language/locale; values contain title and/or description')
   .option('--dry-run', 'Validate and preview fields/languages without submitting changes')
   .action(async (input: string, options) => {

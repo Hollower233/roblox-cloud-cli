@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { AppError, errorInfo } from '../core/errors.js';
 import { CloudLocalizationTable, requireEnabled, type PushRow } from './cloud-table.js';
-import { LANGUAGE_CODE, LocalizationTable, MASTER_LOCALE, SOURCE_LOCALE } from './table.js';
+import { isSupportedLanguage } from './languages.js';
+import { LocalizationTable, MASTER_LOCALE, SOURCE_LOCALE } from './table.js';
 import { translate, type DeepSeekClient, type TranslationCache, type Usage } from '../translation/deepseek.js';
 
 export interface SyncOptions {
@@ -16,7 +17,7 @@ export interface GamePush {
   backupPath?: string; failed: { source: string; locale?: string; error: string }[]; error?: string;
 }
 export interface SyncResult {
-  dryRun: boolean; entries: number; locales: string[]; out?: string; removedOrphans: number;
+  dryRun: boolean; entries: number; locales: string[]; out?: string; removedOrphans: number; removedLanguages: Record<string, number>;
   translated: Record<string, number>; translationFailures: { en: string; locale: string; reason: string }[];
   cachedTranslations: number; model?: string; usage?: Usage; games: GamePush[];
 }
@@ -30,7 +31,11 @@ export async function syncLocalization(table: LocalizationTable, universeIds: st
     const { settings, languages } = await requireEnabled(cloud, universeId);
     games.push({ universeId, tableId: settings.tableId, languages });
   }
-  const locales = [...new Set(games.flatMap(game => game.languages))].filter(code => LANGUAGE_CODE.test(code) && code !== SOURCE_LOCALE && code !== MASTER_LOCALE).sort();
+  const locales = [...new Set(games.flatMap(game => game.languages))].filter(code => code !== MASTER_LOCALE).sort();
+
+  // The written table keeps only the fixed languages; a dry run just reports what would go.
+  const removedLanguages = Object.fromEntries([...table.languages].filter(([code]) => !isSupportedLanguage(code)).map(([code, map]) => [code, map.size]));
+  if (!options.dryRun) for (const code of Object.keys(removedLanguages)) table.languages.delete(code);
 
   // 2) Forced re-translation drops stored translations of the named sources.
   for (const source of options.retranslate ?? []) {
@@ -41,7 +46,7 @@ export async function syncLocalization(table: LocalizationTable, universeIds: st
   // 3) Missing source × locale pairs; rows without a Chinese hint are still translated from English.
   const jobs = table.rows.filter(row => row.en.trim()).map(row => ({ en: row.en, zh: row.zh, locales: locales.filter(locale => !table.get(row.en, locale)) })).filter(job => job.locales.length);
   const missing = jobs.reduce((n, job) => n + job.locales.length, 0);
-  const result: SyncResult = { dryRun: Boolean(options.dryRun), entries: table.rows.length, locales, removedOrphans: table.orphans(), translated: {}, translationFailures: [], cachedTranslations: 0, games: [] };
+  const result: SyncResult = { dryRun: Boolean(options.dryRun), entries: table.rows.length, locales, removedOrphans: table.orphans(), removedLanguages, translated: {}, translationFailures: [], cachedTranslations: 0, games: [] };
   if (missing && !options.dryRun) {
     if (!options.translator) throw new AppError('AUTH_REQUIRED', `${missing} translations are missing; configure DeepSeek (rbx deepseek auth set).`);
     result.model = options.translator.model;
@@ -109,8 +114,9 @@ export async function importFromCloud(table: LocalizationTable, universeId: stri
     const entry = entries.get(row.en);
     if (!entry) continue;
     for (const t of entry.translations.values()) {
-      // Regional locales (e.g. zh_cjv) are outside the per-language table model.
-      if (!LANGUAGE_CODE.test(t.locale) || t.locale === SOURCE_LOCALE || t.locale === MASTER_LOCALE || !t.text || table.get(row.en, t.locale)) { if (!LANGUAGE_CODE.test(t.locale)) result.skippedLocales[t.locale] = (result.skippedLocales[t.locale] ?? 0) + 1; continue; }
+      // Regional locales (e.g. zh_cjv) and languages outside the fixed list are not imported.
+      if (!isSupportedLanguage(t.locale)) { result.skippedLocales[t.locale] = (result.skippedLocales[t.locale] ?? 0) + 1; continue; }
+      if (t.locale === SOURCE_LOCALE || t.locale === MASTER_LOCALE || !t.text || table.get(row.en, t.locale)) continue;
       if (options.humanOnly && t.agentType !== 'User') { result.skippedAutomatic++; continue; }
       table.set(row.en, t.locale, t.text);
       result.imported[t.locale] = (result.imported[t.locale] ?? 0) + 1;
