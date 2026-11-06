@@ -1,6 +1,6 @@
 # Roblox Cloud CLI
 
-独立的 Roblox Cloud 命令行工具与 TypeScript SDK。提供 API Key 管理、游戏扫描、本地缓存、权限验证、游戏列表，以及标准 DataStore 单条读取与跨游戏复制。发布与分析尚未实现。
+独立的 Roblox Cloud 命令行工具与 TypeScript SDK。提供 API Key 管理、游戏扫描、本地缓存、权限验证、游戏列表、标准 DataStore 读写和 Ordered DataStore 只读查询。发布与分析尚未实现。
 
 ## 安装与启动
 
@@ -215,6 +215,20 @@ rbx --json datastore list 123456789 ExampleStore --with-values
 ```
 
 自动按 cursor 翻页；`--limit` 默认不限，`--scope` 默认 `global`。`--with-values` 对每个 Key 逐条读取值（输出 `key<TAB>JSON`）。JSON 输出为 `{ universeId, datastore, count, entries: [{ key, value? }] }`；翻页或读值中途失败但已有结果时状态为 `partial`、退出码 3。API Key 需要 `universe-datastores.objects:list`（读值另需 `objects:read`）。模块：`src/datastores/entries.ts`；离线验证：`tests/datastores.test.ts`。
+
+## 查询 Ordered DataStore 排行榜
+
+```sh
+rbx --json datastore ordered list 123456789 ExampleLeaderboard --limit 50
+rbx --json datastore ordered get 123456789 ExampleLeaderboard 42
+```
+
+两个命令都接受 Universe ID 或本地游戏目录中的游戏名，`--scope` 默认为 `global`。在 Creator Hub 的 Open Cloud API Keys 中，为目标 Universe 给 API Key 授予 `universe.ordered-data-store.scope.entry:read`。查询使用 [Roblox Open Cloud Ordered DataStore](https://create.roblox.com/docs/cloud/guides/data-stores#external-persistent-leaderboard)。
+
+- `list` 默认按分数从高到低取前 50 条，使用 API 的分页令牌继续读取，直至达到 `--limit` 或榜单读完。JSON 的 `data.entries` 为 `[{ key, score }]`，`data.count` 为返回条目数。
+- `get` 按原样传入条目键，JSON 的 `data.score` 为分数，条目不存在时为 `null`。榜单名次以 `list` 的排序为准。
+
+TypeScript SDK 提供 `OrderedDataStoreEntries.list()` 和 `OrderedDataStoreEntries.get()`。
 
 ## 玩家存档历史与合成审计
 

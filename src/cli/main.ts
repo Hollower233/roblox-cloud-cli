@@ -14,6 +14,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { GameInfoLocalization, parseGameInfoTranslations } from '../localization/game-info.js';
 import { DataStoreEntries } from '../datastores/entries.js';
+import { OrderedDataStoreEntries } from '../datastores/ordered.js';
 import { copyProfiles, resolveProfilePlayers, resolveProfileUniverse } from '../profiles/copy.js';
 import { clearProfiles } from '../profiles/clear.js';
 import { profileHistory } from '../profiles/history.js';
@@ -241,7 +242,8 @@ player.command('remove <player>').description('Remove one player from the local 
   emit({ removed: saved }, json(), `Removed ${clean(saved.name)} (${saved.userId}) from the local player catalog.`);
 });
 
-const datastore = program.command('datastore').description('Read and copy standard DataStore entries');
+const cloudContext = commandContext(program, abort.signal);
+const datastore = program.command('datastore').description('Read standard and ordered DataStore entries, and copy standard entries');
 datastore.command('get <universeId> <datastore> <key>').option('--scope <scope>', 'DataStore scope', 'global')
   .action(async (universeId, name, key, options) => {
     const local = store(), apiKey = await new CredentialStore(local.home).get();
@@ -284,6 +286,30 @@ datastore.command('list <universeId> <datastore>')
     }
     const human = rows.map(row => options.withValues ? `${clean(row.key)}\t${JSON.stringify(row.value ?? null)}` : clean(row.key));
     emit({ universeId, datastore: name, count: rows.length, entries: rows }, json(), `${human.join('\n')}${human.length ? '\n' : ''}Total: ${rows.length}${listed.complete ? '' : ' (incomplete)'}`, warnings);
+  });
+
+const ordered = datastore.command('ordered').description('Read Ordered DataStore scores');
+ordered.command('list <universe> <datastore>')
+  .description('List top scores in descending order')
+  .option('--limit <n>', 'Maximum entries to return', '50')
+  .option('--scope <scope>', 'Ordered DataStore scope', 'global')
+  .action(async (input: string, name: string, options: { limit: string; scope: string }) => {
+    const limit = Number(options.limit);
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new AppError('ARGUMENT_ERROR', 'Limit must be a positive integer.');
+    const { universeId, http } = await cloudContext.universe(input);
+    const address = { universeId, datastore: name, scope: options.scope };
+    const entries = await new OrderedDataStoreEntries(http).list(address, limit);
+    const lines = entries.map(({ key, score }) => `${clean(key)}\t${score}`);
+    emit({ ...address, count: entries.length, entries }, json(), [...lines, `Total: ${entries.length}`].join('\n'));
+  });
+ordered.command('get <universe> <datastore> <key>')
+  .description('Read one score by entry key')
+  .option('--scope <scope>', 'Ordered DataStore scope', 'global')
+  .action(async (input: string, name: string, key: string, options: { scope: string }) => {
+    const { universeId, http } = await cloudContext.universe(input);
+    const address = { universeId, datastore: name, scope: options.scope, key };
+    const entry = await new OrderedDataStoreEntries(http).get(address);
+    emit({ ...address, score: entry?.score ?? null }, json(), entry ? `${clean(entry.key)}\t${entry.score}` : 'Entry does not exist.');
   });
 
 for (const mode of ['ban', 'unban', 'ban-status'] as const) {
@@ -463,7 +489,6 @@ icon.command('countdown <universeId> [folder]')
     }
   });
 
-const cloudContext = commandContext(program, abort.signal);
 registerConfigs(program, cloudContext);
 registerExperiments(program, cloudContext);
 registerLocalizationTable(program, localization, cloudContext);

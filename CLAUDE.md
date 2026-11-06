@@ -23,6 +23,7 @@
 - 单条数据读取与跨游戏复制：`src/datastores/entries.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/datastores.test.ts`；本地备份：应用数据目录下的 `datastore-backups/`。
+- Ordered DataStore 只读查榜和按键查分：`src/datastores/ordered.ts`，命令 `datastore ordered list/get`，权限 `universe.ordered-data-store.scope.entry:read`，离线验证 `tests/ordered-datastores.test.ts`。
 
 ## 本机素材缓存
 

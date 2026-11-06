@@ -28,6 +28,8 @@ export { CredentialStore } from './auth/credentials.js';
 export { AppError } from './core/errors.js';
 export { DataStoreEntries } from './datastores/entries.js';
 export type { EntryAddress, EntrySnapshot, EntryVersion, EntryRevision } from './datastores/entries.js';
+export { OrderedDataStoreEntries } from './datastores/ordered.js';
+export type { OrderedDataStoreAddress, OrderedDataStoreEntry } from './datastores/ordered.js';
 export { copyProfiles, resolveProfilePlayers, resolveProfileUniverse, profileServicePreset } from './profiles/copy.js';
 export type { ProfilePlayer } from './profiles/copy.js';
 export { clearProfiles } from './profiles/clear.js';
