@@ -31,7 +31,7 @@ import { emit, renderCatalog, renderIconPlan, renderLocalization, localTime, rem
 import { IconAssets, IconCountdown, type CountdownEvent, type CountdownOptions } from '../icons/countdown.js';
 import { parseTargetTime, requireDuration } from '../icons/frames.js';
 import type { Catalog, Warning } from '../universes/models.js';
-import { listStudioSessions, openStudio, resolveStudioTarget, windowsStudioSystem } from '../studio/launch.js';
+import { closeStudio, listStudioSessions, openStudio, resolveStudioTarget, windowsStudioSystem } from '../studio/launch.js';
 
 let diagnostics: ReturnType<typeof countdownLog> | undefined;
 const abort = new AbortController();
@@ -525,6 +525,32 @@ studio.command('open [game]').description('Open a game\'s root place (name or Un
     const result = await openStudio(windowsStudioSystem(), target, { wait: options.wait, timeoutMs: options.timeout * 1000, signal: abort.signal, progress: m => { if (!json()) process.stderr.write(clean(m) + '\n'); } });
     const state = result.alreadyOpen ? '已打开（已切到前台）' : result.ready ? '已加载' : '已启动，未等待加载';
     emit(result, json(), `${clean(result.name ?? result.title ?? '')}\nPlace ${result.placeId}  Universe ${result.universeId}\nPID ${result.pid}  ${state}  ${(result.elapsedMs / 1000).toFixed(1)}s`);
+  });
+studio.command('close [games...]').description('Close Studio edit sessions by game name or Universe ID; soft close by default (Studio may ask to save)')
+  .option('--place <placeId>', 'Close sessions of this Place ID', id)
+  .option('--pid <pid>', 'Close this editor process', id)
+  .option('--all', 'Close every edit session (soft close only)')
+  .option('--force', 'Terminate the editor and its Team Test processes; unsaved edits are lost')
+  .option('--timeout <seconds>', 'Seconds to wait for windows to close', (v: string) => Number(id(v)), 30)
+  .action(async (games: string[], options: { place?: string; pid?: string; all?: boolean; force?: boolean; timeout: number }) => {
+    if (options.all && options.force) throw new AppError('ARGUMENT_ERROR', '--all cannot be combined with --force.');
+    if (!options.all && !games.length && !options.place && !options.pid) throw new AppError('ARGUMENT_ERROR', 'Provide a game, --place, --pid or --all.');
+    const system = windowsStudioSystem(), sessions = await listStudioSessions(system);
+    let selected = options.all ? sessions : [];
+    if (!options.all) {
+      const local = store(), config = await local.config();
+      const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;
+      const http = new HttpClient({ signal: abort.signal });
+      const places = new Set<string>(options.place ? [options.place] : []);
+      for (const game of games) places.add((await resolveStudioTarget(http, { game }, catalog?.games)).placeId);
+      selected = sessions.filter(s => places.has(s.placeId) || String(s.pid) === options.pid);
+      const missing = [...places].filter(p => !sessions.some(s => s.placeId === p));
+      if (options.pid && !sessions.some(s => String(s.pid) === options.pid)) missing.push(`pid ${options.pid}`);
+      if (missing.length) throw new AppError('ARGUMENT_ERROR', `No open Studio edit session for: ${missing.join(', ')}.`);
+    }
+    const results = await closeStudio(system, selected, { force: options.force, timeoutMs: options.timeout * 1000, signal: abort.signal });
+    const warnings: Warning[] = results.filter(r => r.state === 'pending').map(r => ({ code: 'STUDIO_CLOSE_PENDING', message: 'Window is still open; Studio is probably waiting for a save prompt.', resource: `pid:${r.pid}` }));
+    emit({ sessions: results }, json(), results.length ? results.map(r => `${r.pid}\t${r.placeId}\t${r.state === 'closed' ? '已关闭' : '仍在等待（可能有保存提示）'}${r.forced ? '（强制）' : ''}\t${clean(r.title ?? '')}`).join('\n') : '没有打开的 Studio 编辑会话', warnings);
   });
 studio.command('list').description('List open Studio edit sessions with their Place IDs').action(async () => {
   const sessions = await listStudioSessions(windowsStudioSystem());

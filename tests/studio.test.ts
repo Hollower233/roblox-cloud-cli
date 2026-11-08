@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HttpClient, findStudioExecutable, openStudio, parseStudioProcess, resolveStudioTarget, type StudioSystem } from '../src/index.js';
+import { HttpClient, closeStudio, findStudioExecutable, openStudio, parseStudioProcess, resolveStudioTarget, type StudioSystem } from '../src/index.js';
 import { AppError } from '../src/core/errors.js';
 
 type Row = { pid: number; commandLine: string; title: string };
 function fakeSystem(overrides: Partial<StudioSystem> & { rows?: Row[][] } = {}) {
-  const launched: string[][] = [], focused: number[] = [];
+  const launched: string[][] = [], focused: number[] = [], closed: number[] = [], killed: number[][] = [];
   let clock = 0, call = 0;
   const frames = overrides.rows ?? [[]];
   const system: StudioSystem = {
@@ -14,11 +14,13 @@ function fakeSystem(overrides: Partial<StudioSystem> & { rows?: Row[][] } = {}) 
     processes: async () => frames[Math.min(call++, frames.length - 1)]!,
     launch: async (exe, args) => { launched.push([exe, ...args]); return 500; },
     focus: async pid => { focused.push(pid); },
+    closeWindow: async pid => { closed.push(pid); return true; },
+    kill: async pids => { killed.push(pids); },
     sleep: async ms => { clock += ms; },
     now: () => clock,
     ...overrides,
   };
-  return { system, launched, focused };
+  return { system, launched, focused, closed, killed };
 }
 const edit = (pid: number, placeId: string, title = ''): Row => ({ pid, commandLine: `"C:\\x\\RobloxStudioBeta.exe" -task EditPlace -universeId 7 -placeId ${placeId}`, title });
 const http = (routes: Record<string, unknown>) => new HttpClient({ intervalMs: 0, fetch: (async (url: string | URL) => {
@@ -65,4 +67,21 @@ test('targets resolve from the catalog first, then public endpoints', async () =
   const remote = http({ 'https://develop.roblox.com/v1/universes/55': { id: 55, rootPlaceId: 555, name: 'Remote' }, 'https://apis.roblox.com/universes/v1/places/666/universe': { universeId: 66 } });
   assert.deepEqual(await resolveStudioTarget(remote, { game: '55' }), { placeId: '555', universeId: '55', name: 'Remote' });
   assert.deepEqual(await resolveStudioTarget(remote, { place: '666' }), { placeId: '666', universeId: '66' });
+});
+test('soft close asks windows to close and waits; a window left open (save prompt) stays pending', async () => {
+  const a = { pid: 1, placeId: '100' }, b = { pid: 2, placeId: '200' };
+  const { system, closed, killed } = fakeSystem({ rows: [[edit(1, '100'), edit(2, '200')], [edit(2, '200')]] });
+  const results = await closeStudio(system, [a, b], { timeoutMs: 3000, pollMs: 1000 });
+  assert.deepEqual(closed, [1, 2]); assert.deepEqual(killed, []);
+  assert.deepEqual(results.map(r => [r.pid, r.state, r.forced]), [[1, 'closed', false], [2, 'pending', false]]);
+});
+test('force close terminates the editor together with its Team Test processes only', async () => {
+  const rows = [edit(1, '100'),
+    { pid: 5, commandLine: 'RobloxStudioBeta.exe -task StartServer -placeId 100 -editpid 1', title: '' },
+    { pid: 6, commandLine: 'RobloxStudioBeta.exe -task StartClient -placeId 100 -editpid 1', title: '' },
+    { pid: 7, commandLine: 'RobloxStudioBeta.exe -task StartClient -placeId 300 -editpid 9', title: '' }];
+  const { system, closed, killed } = fakeSystem({ rows: [rows, []] });
+  const [result] = await closeStudio(system, [{ pid: 1, placeId: '100' }], { force: true, pollMs: 1000 });
+  assert.deepEqual(closed, []); assert.deepEqual(killed, [[1, 5, 6]]);
+  assert.equal(result!.state, 'closed'); assert.deepEqual(result!.killedChildren, [5, 6]);
 });

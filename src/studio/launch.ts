@@ -20,6 +20,9 @@ export interface StudioSystem {
   processes(): Promise<{ pid: number; commandLine: string; title: string }[]>;
   launch(executable: string, args: string[]): Promise<number>;
   focus(pid: number): Promise<void>;
+  /** Ask the main window to close (like clicking X); returns false when the process has no window to close. */
+  closeWindow(pid: number): Promise<boolean>;
+  kill(pids: number[]): Promise<void>;
   sleep(ms: number): Promise<void>;
   now(): number;
 }
@@ -112,6 +115,45 @@ export async function openStudio(system: StudioSystem, target: StudioTarget, opt
   throw new AppError('TIMEOUT', `Studio started (pid ${pid}) but place ${target.placeId} did not finish loading within ${Math.round(timeoutMs / 1000)}s.`);
 }
 
+export interface CloseOptions { force?: boolean; timeoutMs?: number; pollMs?: number; signal?: AbortSignal }
+export interface CloseResult { pid: number; placeId: string; universeId?: string; title?: string; state: 'closed' | 'pending'; forced: boolean; killedChildren: number[] }
+/** Team Test servers/clients started from an editor carry `-editpid <editor pid>`. */
+function children(rows: { pid: number; commandLine: string }[], pid: number): number[] {
+  return rows.filter(r => r.pid !== pid && argValue(r.commandLine, 'editpid') === String(pid)).map(r => r.pid);
+}
+/**
+ * Soft close (default) sends a window close request and waits; Studio may show a save prompt, which leaves the
+ * session `pending` for a person to answer. `force` terminates the editor and its Team Test processes, discarding unsaved edits.
+ */
+export async function closeStudio(system: StudioSystem, sessions: StudioProcess[], options: CloseOptions = {}): Promise<CloseResult[]> {
+  requireWindows(system);
+  const timeoutMs = options.timeoutMs ?? 30_000, pollMs = options.pollMs ?? 1_000, started = system.now();
+  const results = new Map<number, CloseResult>();
+  const base = (s: StudioProcess) => ({ pid: s.pid, placeId: s.placeId, ...(s.universeId ? { universeId: s.universeId } : {}), ...(s.title ? { title: s.title } : {}) });
+  if (options.force) {
+    const rows = await system.processes();
+    for (const s of sessions) {
+      const killed = children(rows, s.pid);
+      await system.kill([s.pid, ...killed]);
+      results.set(s.pid, { ...base(s), state: 'closed', forced: true, killedChildren: killed });
+    }
+  } else {
+    for (const s of sessions) {
+      await system.closeWindow(s.pid);
+      results.set(s.pid, { ...base(s), state: 'pending', forced: false, killedChildren: [] });
+    }
+  }
+  const open = () => [...results.values()].filter(r => r.state === 'pending');
+  while (open().length) {
+    const alive = new Set((await system.processes()).map(r => r.pid));
+    for (const r of open()) if (!alive.has(r.pid)) r.state = 'closed';
+    if (!open().length || system.now() - started >= timeoutMs) break;
+    if (options.signal?.aborted) throw new AppError('CANCELLED', 'Operation cancelled.');
+    await system.sleep(pollMs);
+  }
+  return [...results.values()];
+}
+
 function powershell(script: string): Promise<string> {
   return new Promise((resolvePromise, reject) => {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `[Console]::OutputEncoding=[Text.Encoding]::UTF8; ${script}`], { windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
@@ -154,6 +196,14 @@ export function windowsStudioSystem(): StudioSystem {
       return pid;
     },
     async focus(pid) { await powershell(`$null=(New-Object -ComObject WScript.Shell).AppActivate(${Math.trunc(pid)})`); },
+    async closeWindow(pid) {
+      const out = await powershell(`$p=Get-Process -Id ${Math.trunc(pid)} -ErrorAction SilentlyContinue; if ($p) { [string]$p.CloseMainWindow() } else { 'False' }`);
+      return out.trim() === 'True';
+    },
+    async kill(pids) {
+      if (!pids.length) return;
+      await powershell(`Stop-Process -Id ${pids.map(p => Math.trunc(p)).join(',')} -Force -ErrorAction SilentlyContinue`);
+    },
     sleep: ms => new Promise(r => setTimeout(r, ms)),
     now: () => Date.now(),
   };

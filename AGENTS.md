@@ -133,4 +133,5 @@
 - 启动与会话识别：`src/studio/launch.ts`；命令 `studio open [game] [--place <id>] [--no-wait] [--timeout <s>]`、`studio list`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅 Windows，不需要 API Key。
 - 目标解析优先用游戏目录的 `rootPlaceId`（扫描/刷新时从 Cloud v2 Universe 的 `rootPlace` 记录），缺失时走公开 `develop.roblox.com` / `apis.roblox.com/universes/v1/places/{id}/universe`。
 - 已打开同 Place 的编辑会话（命令行 `-task EditPlace -placeId`）只切前台；否则用 `Versions` 下最新 `RobloxStudioBeta.exe -task EditPlace -placeId -universeId` 启动，窗口标题变为 `* - Roblox Studio` 视为加载完成。参数未公开文档化。
+- `studio close [games...] [--place] [--pid] [--all] [--force] [--timeout]`：默认软关闭（CloseMainWindow，Studio 自行弹保存提示，超时未关返回 `pending`），`--force` 结束编辑器及 `-editpid` 指向它的 Team Test 进程；`--all` 不可与 `--force` 同用。
 - 离线验证：`tests/studio.test.ts`。

@@ -654,7 +654,13 @@ rbx studio open --place 110346202702661
 rbx --json studio open "BVB TEST" --timeout 180
 rbx studio open "BVB TEST" --no-wait  # 启动后立即返回
 rbx studio list                       # 已打开的编辑会话：PID、Place、Universe、窗口标题
+rbx studio close "BVB TEST" 封面测试   # 软关闭，可一次传多个游戏
+rbx studio close --place 110346202702661
+rbx studio close --pid 18908 --force  # 强制结束编辑器及其 Team Test 进程，丢弃未保存改动
+rbx studio close --all                # 软关闭全部编辑会话（不可与 --force 同用）
 ```
+
+- `close` 默认软关闭：向窗口发送关闭请求（等同点 ×），Studio 自己处理保存。若有未保存改动会弹保存提示，超时（默认 30 秒，`--timeout` 调整）后仍未关的会话返回 `pending` 并带 `STUDIO_CLOSE_PENDING` warning、退出码 3，需人工在 Studio 里处理后再查 `studio list`。`--force` 才会结束进程，并连带结束命令行 `-editpid` 指向该编辑器的 Team Test 服务端/客户端。
 
 - 不需要 API Key。优先用本地游戏目录的 `rootPlaceId`；目录没有时调用公开接口 `develop.roblox.com/v1/universes/{id}`（根 Place）或 `apis.roblox.com/universes/v1/places/{id}/universe`（Place 所属 Universe），私密游戏同样可用。重名游戏报错并列出候选 Universe ID。
 - 同一 Place 已有编辑会话时不重复启动，只切到前台并返回 `alreadyOpen: true`。按进程命令行的 `-task EditPlace -placeId` 识别，Team Test 的服务端/客户端进程不计入；窗口标题是本地化名，不用于匹配。
