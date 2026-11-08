@@ -35,7 +35,8 @@ export class RobloxApi implements RobloxGateway {
   }
   async metadata(universeId: string): Promise<UniverseMetadata> {
     const d = object(await this.http.request(`https://apis.roblox.com/cloud/v2/universes/${id(universeId)}`, { auth: true }));
-    return { name: text(d.displayName), visibility: d.visibility === 'PUBLIC' || d.visibility === 'PRIVATE' ? d.visibility : 'UNKNOWN' };
+    const rootPlaceId = typeof d.rootPlace === 'string' ? /^universes\/\d+\/places\/(\d+)$/.exec(d.rootPlace)?.[1] : undefined;
+    return { name: text(d.displayName), visibility: d.visibility === 'PUBLIC' || d.visibility === 'PRIVATE' ? d.visibility : 'UNKNOWN', ...(rootPlaceId ? { rootPlaceId } : {}) };
   }
   async details(universeIds: string[]): Promise<GameDetails[]> {
     if (!universeIds.length) return [];

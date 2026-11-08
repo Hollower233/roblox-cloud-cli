@@ -11,7 +11,7 @@ export function fakeApi(overrides: Partial<RobloxGateway> = {}): RobloxGateway {
     userGames: async (): Promise<Page> => ({ games: [], cursor: null }),
     groupGames: async (): Promise<Page> => ({ games: [{ id: '1', name: 'Game 1' }], cursor: null }),
     permissions: async () => ({ canManage: true, canCloudEdit: false }),
-    metadata: async universeId => ({ name: `Game ${universeId}`, visibility: 'PRIVATE' }),
+    metadata: async universeId => ({ name: `Game ${universeId}`, visibility: 'PRIVATE', rootPlaceId: `${universeId}0` }),
     details: async ids => ids.map((id): GameDetails => ({ id, name: `Game ${id}`, owner: { id: '200', name: 'Studio', type: 'Group' }, ccu: 10 })),
     ...overrides,
   };

@@ -5,10 +5,12 @@ export interface DiscoveredGame { id: string; name: string }
 export interface Page { games: DiscoveredGame[]; cursor: string | null }
 export interface Permissions { canManage: boolean; canCloudEdit: boolean }
 export interface GameDetails { id: string; name: string; owner: Owner; ccu: number }
-export interface UniverseMetadata { name: string; visibility: 'PUBLIC' | 'PRIVATE' | 'UNKNOWN' }
+export interface UniverseMetadata { name: string; visibility: 'PUBLIC' | 'PRIVATE' | 'UNKNOWN'; rootPlaceId?: string }
 export interface Warning { code: string; message: string; resource?: string; httpStatus?: number }
 export interface Game {
   universeId: string; name: string; owner: Owner; visibility: 'PUBLIC' | 'PRIVATE' | 'UNKNOWN';
+  /** Root place, read from Cloud v2 universe metadata; absent until the first successful metadata read. */
+  rootPlaceId?: string;
   ccu: number | null; permissions: Permissions | null;
   discoveredAt: string; lastSeenAt: string; metadataAt?: string; detailsAt?: string; permissionsAt?: string;
   discoveryState: 'seen' | 'stale' | 'not-seen'; errors: Warning[];

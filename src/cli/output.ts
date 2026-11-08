@@ -31,12 +31,12 @@ function table(rows: string[][]): string {
   return rows.map(row => row.map((cell, i) => cell + ' '.repeat(Math.max(0, widths[i]! - width(cell)))).join('  ').trimEnd()).join('\n');
 }
 export function renderCatalog(catalog: Catalog, games: Game[]): string {
-  const rows = [['游戏名', 'OWNER', '状态', 'CCU', 'UNIVERSE ID', '记录状态']];
+  const rows = [['游戏名', 'OWNER', '状态', 'CCU', 'UNIVERSE ID', 'ROOT PLACE ID', '记录状态']];
   for (const game of games) rows.push([
     clean(game.name), clean(`${game.owner.name}（${game.owner.type === 'User' ? '个人' : '群组'}）`),
     game.visibility === 'PUBLIC' ? '公开' : game.visibility === 'PRIVATE' ? '私密' : '未知',
     game.ccu === null ? '—' : game.ccu >= 1000 ? `${(game.ccu / 1000).toFixed(1)}k` : String(game.ccu),
-    game.universeId,
+    game.universeId, game.rootPlaceId ?? '—',
     game.errors.length ? '部分信息未刷新' : game.discoveryState === 'stale' ? '扫描未刷新' : game.discoveryState === 'not-seen' ? '本次未发现' : game.permissions === null ? '权限未知' : game.permissions.canManage ? '已验证' : '无管理权限',
   ]);
   return `${table(rows)}\n\n${games.length} 个游戏；账号 ${catalog.userId}\n上次扫描：${catalog.scannedAt ?? '尚未扫描'}\n上次信息刷新：${catalog.refreshedAt ?? catalog.scannedAt ?? '—'}\n覆盖范围：${catalog.coverage}`;

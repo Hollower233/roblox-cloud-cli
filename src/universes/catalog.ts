@@ -95,7 +95,7 @@ export class CatalogService {
       this.check(); this.options.progress?.(`Checking ${game.name} (${game.universeId})`);
       try { game.permissions = await this.api.permissions(game.universeId); game.permissionsAt = this.now(); }
       catch (e) { propagateCancel(e); game.errors.push(warning(e, `universe:${game.universeId}`)); /* Keep last known permissions and their timestamp. */ }
-      try { const d = await this.api.metadata(game.universeId); game.name = d.name; game.visibility = d.visibility; game.metadataAt = this.now(); }
+      try { const d = await this.api.metadata(game.universeId); game.name = d.name; game.visibility = d.visibility; if (d.rootPlaceId) game.rootPlaceId = d.rootPlaceId; game.metadataAt = this.now(); }
       catch (e) { propagateCancel(e); game.errors.push(warning(e, `universe:${game.universeId}`)); }
       catalog.warnings.push(...game.errors);
     }

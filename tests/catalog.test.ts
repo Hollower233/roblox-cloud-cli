@@ -11,6 +11,13 @@ test('scan paginates, deduplicates and preserves independent management and edit
   assert.deepEqual(calls, [undefined, 'next+/=']); assert.equal(result.games.length, 2);
   assert.equal(result.games[0]!.permissions!.canManage, true); assert.equal(result.games[0]!.permissions!.canCloudEdit, false);
   assert.ok(result.warnings.some(w => w.code === 'PERSONAL_PRIVATE_DISCOVERY_UNAVAILABLE'));
+  assert.deepEqual(result.games.map(g => g.rootPlaceId), ['10', '20']);
+});
+test('refresh keeps the last known root place when metadata omits it or fails', async () => {
+  const old = savedCatalog([{ ...savedGame('1'), rootPlaceId: '555' }, { ...savedGame('2'), rootPlaceId: '666' }]);
+  const api = fakeApi({ metadata: async universeId => { if (universeId === '2') throw new AppError('HTTP_ERROR', 'Unavailable', 503); return { name: 'Game 1', visibility: 'PRIVATE' }; } });
+  const result = await new CatalogService(api).refresh(identity, old);
+  assert.deepEqual(result.games.map(g => g.rootPlaceId), ['555', '666']);
 });
 test('failed group discovery preserves prior records and does not mutate the input', async () => {
   const old = savedCatalog();
