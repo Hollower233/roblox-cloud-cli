@@ -127,3 +127,10 @@
 - CLI：`localization init/enable/sync/import/export/show`、`deepseek auth/models/config`（`src/cli/commands/localization-table.ts`）；SDK 导出：`src/index.ts`。
 - 云端只增改通用条目（无 Key、无 Context），从不发送 delete；`sync` 只处理已启用语言与固定清单的交集，写出 `.rbxm` 时删除清单外语言；推送前备份到 `localization-backups/table-*.json`。DeepSeek Key 存 `deepseek.dpapi`，模型配置 `deepseek.json`，译文缓存 `localization-cache/translations.jsonl`。
 - 离线验证：`tests/localization-table.test.ts`。
+
+## 打开 Studio 项目
+
+- 启动与会话识别：`src/studio/launch.ts`；命令 `studio open [game] [--place <id>] [--no-wait] [--timeout <s>]`、`studio list`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅 Windows，不需要 API Key。
+- 目标解析优先用游戏目录的 `rootPlaceId`（扫描/刷新时从 Cloud v2 Universe 的 `rootPlace` 记录），缺失时走公开 `develop.roblox.com` / `apis.roblox.com/universes/v1/places/{id}/universe`。
+- 已打开同 Place 的编辑会话（命令行 `-task EditPlace -placeId`）只切前台；否则用 `Versions` 下最新 `RobloxStudioBeta.exe -task EditPlace -placeId -universeId` 启动，窗口标题变为 `* - Roblox Studio` 视为加载完成。参数未公开文档化。
+- 离线验证：`tests/studio.test.ts`。

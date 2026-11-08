@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { HttpClient, findStudioExecutable, openStudio, parseStudioProcess, resolveStudioTarget, type StudioSystem } from '../src/index.js';
+import { AppError } from '../src/core/errors.js';
+
+type Row = { pid: number; commandLine: string; title: string };
+function fakeSystem(overrides: Partial<StudioSystem> & { rows?: Row[][] } = {}) {
+  const launched: string[][] = [], focused: number[] = [];
+  let clock = 0, call = 0;
+  const frames = overrides.rows ?? [[]];
+  const system: StudioSystem = {
+    platform: 'win32', localAppData: 'C:\\L',
+    studioBuilds: async () => [{ executable: 'C:\\L\\old\\RobloxStudioBeta.exe', mtimeMs: 1 }, { executable: 'C:\\L\\new\\RobloxStudioBeta.exe', mtimeMs: 9 }],
+    processes: async () => frames[Math.min(call++, frames.length - 1)]!,
+    launch: async (exe, args) => { launched.push([exe, ...args]); return 500; },
+    focus: async pid => { focused.push(pid); },
+    sleep: async ms => { clock += ms; },
+    now: () => clock,
+    ...overrides,
+  };
+  return { system, launched, focused };
+}
+const edit = (pid: number, placeId: string, title = ''): Row => ({ pid, commandLine: `"C:\\x\\RobloxStudioBeta.exe" -task EditPlace -universeId 7 -placeId ${placeId}`, title });
+const http = (routes: Record<string, unknown>) => new HttpClient({ intervalMs: 0, fetch: (async (url: string | URL) => {
+  const body = routes[String(url)];
+  return body === undefined ? new Response('{}', { status: 404 }) : Response.json(body);
+}) as typeof fetch });
+
+test('only edit sessions are parsed; Team Test servers and clients are ignored', () => {
+  assert.deepEqual(parseStudioProcess({ pid: 1, commandLine: 'RobloxStudioBeta.exe --task EditPlace --placeId 11 --universeId 22', title: 'A - Roblox Studio' }), { pid: 1, placeId: '11', universeId: '22', title: 'A - Roblox Studio' });
+  assert.equal(parseStudioProcess({ pid: 2, commandLine: 'RobloxStudioBeta.exe -task StartServer -placeId 11', title: '' }), null);
+  assert.equal(parseStudioProcess({ pid: 3, commandLine: 'RobloxStudioBeta.exe -task StartClient -placeId 11', title: '' }), null);
+  assert.equal(parseStudioProcess({ pid: 4, commandLine: 'RobloxStudioBeta.exe', title: 'Roblox Studio' }), null);
+});
+test('the newest Studio build is chosen and non-Windows is rejected', async () => {
+  assert.equal(await findStudioExecutable(fakeSystem().system), 'C:\\L\\new\\RobloxStudioBeta.exe');
+  await assert.rejects(findStudioExecutable(fakeSystem({ studioBuilds: async () => [] }).system), (e: AppError) => e.code === 'STUDIO_NOT_FOUND');
+  await assert.rejects(findStudioExecutable(fakeSystem({ platform: 'linux' }).system), (e: AppError) => e.code === 'UNSUPPORTED_PLATFORM');
+});
+test('an already open place is focused instead of launched again', async () => {
+  const { system, launched, focused } = fakeSystem({ rows: [[edit(42, '100', 'X - Roblox Studio')]] });
+  const result = await openStudio(system, { placeId: '100', universeId: '7' });
+  assert.equal(result.alreadyOpen, true); assert.equal(result.pid, 42); assert.equal(result.ready, true);
+  assert.deepEqual(launched, []); assert.deepEqual(focused, [42]);
+});
+test('launch passes EditPlace arguments and waits for the loaded title, following PID hand-off', async () => {
+  const { system, launched } = fakeSystem({ rows: [[], [edit(77, '100', 'Roblox Studio')], [edit(77, '100', 'BVB - Roblox Studio')]] });
+  const result = await openStudio(system, { placeId: '100', universeId: '7' }, { pollMs: 1000 });
+  assert.deepEqual(launched, [['C:\\L\\new\\RobloxStudioBeta.exe', '-task', 'EditPlace', '-placeId', '100', '-universeId', '7']]);
+  assert.equal(result.ready, true); assert.equal(result.pid, 77); assert.equal(result.title, 'BVB - Roblox Studio');
+});
+test('no-wait returns immediately and a stuck load times out', async () => {
+  const quick = await openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { wait: false });
+  assert.equal(quick.ready, false); assert.equal(quick.pid, 500);
+  await assert.rejects(openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { timeoutMs: 5000, pollMs: 1000 }), (e: AppError) => e.code === 'TIMEOUT');
+});
+test('targets resolve from the catalog first, then public endpoints', async () => {
+  const games = [{ universeId: '7', name: 'BVB TEST', rootPlaceId: '100' }, { universeId: '8', name: 'Dup' }, { universeId: '9', name: 'dup' }];
+  const none = http({});
+  assert.deepEqual(await resolveStudioTarget(none, { game: 'bvb test' }, games), { placeId: '100', universeId: '7', name: 'BVB TEST' });
+  assert.deepEqual(await resolveStudioTarget(none, { game: '7' }, games), { placeId: '100', universeId: '7', name: 'BVB TEST' });
+  assert.deepEqual(await resolveStudioTarget(none, { place: '100' }, games), { placeId: '100', universeId: '7', name: 'BVB TEST' });
+  await assert.rejects(resolveStudioTarget(none, { game: 'DUP' }, games), (e: AppError) => e.code === 'ARGUMENT_ERROR' && e.message.includes('8, 9'));
+  await assert.rejects(resolveStudioTarget(none, { game: 'missing' }, games), (e: AppError) => e.code === 'ARGUMENT_ERROR');
+  const remote = http({ 'https://develop.roblox.com/v1/universes/55': { id: 55, rootPlaceId: 555, name: 'Remote' }, 'https://apis.roblox.com/universes/v1/places/666/universe': { universeId: 66 } });
+  assert.deepEqual(await resolveStudioTarget(remote, { game: '55' }), { placeId: '555', universeId: '55', name: 'Remote' });
+  assert.deepEqual(await resolveStudioTarget(remote, { place: '666' }), { placeId: '666', universeId: '66' });
+});

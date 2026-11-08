@@ -56,3 +56,5 @@ export { syncLocalization, importFromCloud } from './localization/sync.js';
 export type { SyncOptions, SyncResult, GamePush, ImportResult } from './localization/sync.js';
 export { DeepSeekClient, TranslationCache, translate, checkTranslation } from './translation/deepseek.js';
 export type { TranslationJob, TranslationOutcome, Usage } from './translation/deepseek.js';
+export { findStudioExecutable, isReadyTitle, listStudioSessions, openStudio, parseStudioProcess, resolveStudioTarget, windowsStudioSystem } from './studio/launch.js';
+export type { OpenOptions, OpenResult, StudioProcess, StudioSystem, StudioTarget } from './studio/launch.js';

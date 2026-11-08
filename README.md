@@ -57,6 +57,8 @@ rbx universe refresh
 
 **覆盖限制：个人私密游戏不自动发现。** 实测个人游戏接口的其他筛选值返回 501；群组接口 `accessFilter=1` 可以返回私密游戏。扫描会通过结构化 warning 明确指出覆盖缺口。已知 ID 可手动添加。直接授予的其他个人创作者游戏协作权限也不由本扫描流程自动枚举。目录代表本次接口发现范围，不声称覆盖所有可能的协作资源。
 
+扫描、刷新和 `add` 会顺带记录每个游戏的根 Place（`rootPlaceId`，来自 Cloud v2 Universe 的 `rootPlace`，私密游戏同样可得），`list` 显示为 ROOT PLACE ID 列；读取失败时保留旧值。
+
 CCU 与公开状态都是采集时的快照。缓存保留 `detailsAt`、`metadataAt`、`permissionsAt`，刷新失败保留旧值与旧时间，不会把未知值转成 0 或私密。权限检查失败不等于无权限。
 
 群组扫描失败保留旧记录并标记 stale；成功扫描但未再发现的旧游戏标记 not-seen，不擅自删除。表格会标明这些记录。`canManage` 只表示缓存时的账号管理权限，不承诺当前 Key 有权执行未来任何写操作。
@@ -642,3 +644,20 @@ rbx --json servers restart --universe 123 --all --countdown
 回执的 `data.state: "submitted"` 表示 Roblox 接收了请求。实际重启由 Roblox 执行，Stable 接口不返回重启 ID。遇到超时等无法确认的结果，命令返回 `unverified` 并退出 3。先在 Creator Hub 的服务器管理查看进度，再决定是否重新提交。
 
 SDK 对应调用为 `restartUniverseServers(http, '123', { all: false, countdown: true })`。接口参考 [Restart Universe Servers](https://create.roblox.com/docs/cloud/reference/features/universes#Cloud_RestartUniverseServers)。
+
+## 打开 Studio 项目（Windows）
+
+```powershell
+rbx studio open "BVB TEST"            # 本地目录中的游戏名（不区分大小写），打开根 Place
+rbx studio open 10768830317           # Universe ID
+rbx studio open --place 110346202702661
+rbx --json studio open "BVB TEST" --timeout 180
+rbx studio open "BVB TEST" --no-wait  # 启动后立即返回
+rbx studio list                       # 已打开的编辑会话：PID、Place、Universe、窗口标题
+```
+
+- 不需要 API Key。优先用本地游戏目录的 `rootPlaceId`；目录没有时调用公开接口 `develop.roblox.com/v1/universes/{id}`（根 Place）或 `apis.roblox.com/universes/v1/places/{id}/universe`（Place 所属 Universe），私密游戏同样可用。重名游戏报错并列出候选 Universe ID。
+- 同一 Place 已有编辑会话时不重复启动，只切到前台并返回 `alreadyOpen: true`。按进程命令行的 `-task EditPlace -placeId` 识别，Team Test 的服务端/客户端进程不计入；窗口标题是本地化名，不用于匹配。
+- 新启动时取 `%LOCALAPPDATA%\Roblox\Versions` 下修改时间最新的 `RobloxStudioBeta.exe`（不读注册表协议，注册表可能指向旧版本），参数为 `-task EditPlace -placeId <P> -universeId <U>`。这是 Studio 自身使用但未公开文档化的参数，Roblox 改版可能失效。
+- 默认等待窗口标题变为 `<名称> - Roblox Studio` 视为加载完成（`ready: true`），默认超时 120 秒，超时返回 `TIMEOUT`。加载完成不代表 MCP 插件已连接，连接状态以 MCP 为准。
+- 模块：`src/studio/launch.ts`；SDK：`resolveStudioTarget`、`openStudio`、`listStudioSessions`、`windowsStudioSystem`。离线测试：`tests/studio.test.ts`。

@@ -31,6 +31,7 @@ import { emit, renderCatalog, renderIconPlan, renderLocalization, localTime, rem
 import { IconAssets, IconCountdown, type CountdownEvent, type CountdownOptions } from '../icons/countdown.js';
 import { parseTargetTime, requireDuration } from '../icons/frames.js';
 import type { Catalog, Warning } from '../universes/models.js';
+import { listStudioSessions, openStudio, resolveStudioTarget, windowsStudioSystem } from '../studio/launch.js';
 
 let diagnostics: ReturnType<typeof countdownLog> | undefined;
 const abort = new AbortController();
@@ -511,6 +512,24 @@ servers.command('restart').description('Submit a restart for all active places i
     const http = new HttpClient({ apiKey, signal: abort.signal });
     cloudContext.receipt(await restartUniverseServers(http, options.universe, options));
   });
+
+const studio = program.command('studio').description('Open places in local Roblox Studio (Windows)');
+studio.command('open [game]').description('Open a game\'s root place (name or Universe ID from the local catalog) for editing; reuses an open session')
+  .option('--place <placeId>', 'Open this exact Place ID instead of a root place', id)
+  .option('--no-wait', 'Return right after launching instead of waiting for the place to load')
+  .option('--timeout <seconds>', 'Maximum seconds to wait for loading', (v: string) => Number(id(v)), 120)
+  .action(async (game: string | undefined, options: { place?: string; wait: boolean; timeout: number }) => {
+    const local = store(), config = await local.config();
+    const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;
+    const target = await resolveStudioTarget(new HttpClient({ signal: abort.signal }), { game, place: options.place }, catalog?.games);
+    const result = await openStudio(windowsStudioSystem(), target, { wait: options.wait, timeoutMs: options.timeout * 1000, signal: abort.signal, progress: m => { if (!json()) process.stderr.write(clean(m) + '\n'); } });
+    const state = result.alreadyOpen ? '已打开（已切到前台）' : result.ready ? '已加载' : '已启动，未等待加载';
+    emit(result, json(), `${clean(result.name ?? result.title ?? '')}\nPlace ${result.placeId}  Universe ${result.universeId}\nPID ${result.pid}  ${state}  ${(result.elapsedMs / 1000).toFixed(1)}s`);
+  });
+studio.command('list').description('List open Studio edit sessions with their Place IDs').action(async () => {
+  const sessions = await listStudioSessions(windowsStudioSystem());
+  emit({ sessions }, json(), sessions.length ? sessions.map(s => `${s.pid}\t${s.placeId}\t${s.universeId ?? '—'}\t${clean(s.title ?? '')}`).join('\n') : '没有打开的 Studio 编辑会话');
+});
 
 try { await program.parseAsync(process.argv); }
 catch (error) {
