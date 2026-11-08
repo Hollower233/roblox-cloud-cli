@@ -2,6 +2,7 @@
 import { Command, CommanderError } from 'commander';
 import { commandContext } from './context.js';
 import { registerConfigs } from './commands/configs.js';
+import { registerPlaces } from './commands/places.js';
 import { registerExperiments } from './commands/experiments.js';
 import { registerLocalizationTable } from './commands/localization-table.js';
 import { countdownLog } from './countdown-log.js';
@@ -492,6 +493,7 @@ icon.command('countdown <universeId> [folder]')
   });
 
 registerConfigs(program, cloudContext);
+registerPlaces(program, cloudContext);
 registerExperiments(program, cloudContext);
 registerLocalizationTable(program, localization, cloudContext);
 

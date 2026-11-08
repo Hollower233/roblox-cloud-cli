@@ -667,3 +667,25 @@ rbx studio close --all                # 软关闭全部编辑会话（不可与 
 - 新启动时取 `%LOCALAPPDATA%\Roblox\Versions` 下修改时间最新的 `RobloxStudioBeta.exe`（不读注册表协议，注册表可能指向旧版本），参数为 `-task EditPlace -placeId <P> -universeId <U>`。这是 Studio 自身使用但未公开文档化的参数，Roblox 改版可能失效。
 - 默认等待窗口标题变为 `<名称> - Roblox Studio` 视为加载完成（`ready: true`），默认超时 120 秒，超时返回 `TIMEOUT`。加载完成不代表 MCP 插件已连接，连接状态以 MCP 为准。
 - 模块：`src/studio/launch.ts`；SDK：`resolveStudioTarget`、`openStudio`、`listStudioSessions`、`windowsStudioSystem`。离线测试：`tests/studio.test.ts`。
+## Place 服务器人数上限
+
+一个 Universe 可以包含多个 Place，人数上限按 Place 分别设置。`--universe` 接受 Universe ID 或本地游戏目录中的精确名称。
+
+```powershell
+rbx places list --universe <UniverseId>
+rbx places update --universe <UniverseId> --place <PlaceId> --max-players 20
+rbx places update --universe <UniverseId> --all --max-players 20
+```
+
+`list` 分页列出所有 Place，显示名称、ID、是否主 Place 和每服人数上限。`update` 必须且只能指定 `--place` 或 `--all`；人数为正整数，Roblox 判定实际允许范围。使用 Open Cloud API Key；写入权限为目标 Universe 的 `universe.place:write`。仅 PATCH `serverSize`，不修改其他配置；写入前读取原值，写入后回读验证。不会自动关闭 Studio 或重启服务器，Team Create 冲突会返回明确错误。
+
+批量写入逐个执行，某个 Place 失败后继续其他 Place，保留成功结果；退出码 `3` 表示存在失败或未确认的项目。JSON 结果包含每个 Place 的 `before/requested/after/state`，状态为 `verified`、`failed` 或 `unverified`。网络中断或回读失败时不自动重试写入，应查询当前配置后再决定是否重试。
+
+SDK 导出 `listPlaces(http, universeId)`、`getPlace(http, universeId, placeId)`、`updatePlaces(http, universeId, { placeId?, all?, maxPlayers })`。
+
+离线测试：`tests/places.test.ts`。显式真实写测试会记录原配置到应用数据目录 `place-backups/`，通过 CLI 测试查询、条件允许时的 `--all` 原值写入、首个 Place 临时调整及恢复：
+
+```powershell
+$env:RBX_LIVE_PLACES_UNIVERSE = '<测试 Universe ID>'
+npm run test:live:places
+```

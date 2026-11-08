@@ -20,6 +20,8 @@ export type { HttpOptions } from './transport/http-client.js';
 export { RobloxApi } from './roblox/api.js';
 export { CatalogService, selectGames } from './universes/catalog.js';
 export { getUniverseServerStatus, restartUniverseServers } from './universes/restart.js';
+export { getPlace, listPlaces, updatePlaces } from './universes/places.js';
+export type { PlaceInfo, PlaceUpdateOptions, PlaceUpdateResult } from './universes/places.js';
 export type { ServerCounts, ServerRestartOptions, UniverseServerStatus } from './universes/restart.js';
 export type { CatalogOptions } from './universes/catalog.js';
 export * from './universes/models.js';

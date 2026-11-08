@@ -113,6 +113,12 @@
 - 离线验证：`tests/configs.test.ts`、`tests/experiments.test.ts`、`tests/cloud-cli.test.ts`；显式真实只读验证：`scripts/cloud-management-smoke.ts`。
 - 本地备份：应用数据目录下的 `config-backups/`、`experiment-backups/`。发布必须提供审阅的草稿哈希；异步未完成保留操作 ID，不重试写入。
 
+## Place 服务器人数上限
+
+- 模块：`src/universes/places.ts`；CLI：`src/cli/commands/places.ts`，命令 `places list/update --universe <id-or-name>`；SDK 导出：`src/index.ts`。
+- `update` 必须且只能选择 `--place <id>` 或 `--all`，`--max-players` 为正整数；仅更新 Cloud Place 的 `serverSize`，权限 `universe.place:write`。写前读原值、写后回读；批量逐项报告，失败退出码 3，不自动重试写入，不关闭 Studio 或重启服务器。
+- 离线：`tests/places.test.ts`；显式真实写验证：`scripts/places-smoke.ts`，环境变量 `RBX_LIVE_PLACES_UNIVERSE`，命令 `npm run test:live:places`。原值备份在应用数据目录 `place-backups/`，测试后恢复。
+
 ## 服务器重启
 
 - 重启模块：`src/universes/restart.ts`；命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
