@@ -62,3 +62,9 @@ export { closeStudio, findStudioExecutable, isReadyTitle, listStudioSessions, op
 export type { CloseOptions, CloseResult, OpenOptions, OpenResult, StudioProcess, StudioSystem, StudioTarget } from './studio/launch.js';
 export { latestPlaceVersion, normalizeLabel, pickSession, placeEntries, planPublishTarget, publishAs, publishScriptPath, resolvePublishGame, searchTerm, windowsPublishAsSystem, PERSONAL_OWNER_LABEL } from './studio/publish-as.js';
 export type { PlaceEntry, PlaceVersion, PublishAsOptions, PublishAsResult, PublishAsSystem, PublishTarget, PublishUiArgs, PublishUiResult, PublishVerification } from './studio/publish-as.js';
+export { DEVPRODUCT_TABLE_NAME, compareIds, createDeveloperProduct, getDeveloperProduct, listDeveloperProducts, loadDeveloperProductTable, parseDeveloperProductSource, parseDeveloperProductTable, updateDeveloperProduct } from './devproducts/products.js';
+export type { DeveloperProduct, DeveloperProductRow, ProductFields } from './devproducts/products.js';
+export { CONFIRM_INSTRUCTION, READBACK_DELAYS_MS, STALE_INSTRUCTION, planToken, planUniverse, syncDeveloperProducts, syncWarnings } from './devproducts/sync.js';
+export type { ActionResult, ActionState, PlannedAction, DeveloperProductSyncOptions, DeveloperProductSyncResult, UniversePlan, UniverseResult } from './devproducts/sync.js';
+export { parseRecordRows } from './localization/lua-table.js';
+export type { RecordRow, RecordValue } from './localization/lua-table.js';

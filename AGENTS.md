@@ -149,3 +149,11 @@
 - 脚本注意：PowerShell 变量名不区分大小写，新增变量不得与已有变量（含 `$script:` 作用域）同名。
 - 复核：覆盖用 Assets API 版本号（`asset:read`），新建用 Place 目录新增 ID；点击按钮前失败必未发布。
 - 离线验证：`tests/studio-publish-as.test.ts`；真实界面只用 `--dry-run` 验证，真实发布需用户明确要求。
+
+## 开发者产品同步
+
+- 接口、表解析、分页：`src/devproducts/products.ts`；diff 计划、确认码、执行与备份：`src/devproducts/sync.ts`；通用行解析 `parseRecordRows`：`src/localization/lua-table.ts`。
+- CLI：`src/cli/commands/devproducts.ts`，命令 `devproduct list <游戏>`、`devproduct sync <游戏...> --source <rbxm> [--confirm <token>]`；SDK 导出：`src/index.ts`。
+- 来源为 Studio `项目文档/开发者产品` 的 `{ en, zh, price }` 行，单向推送；按 en 匹配改价，匹配不上先复用表外商品（ProductId 升序）再新建；重名或列表拉不全则拒绝该宇宙。
+- 出现 reuse 时整批不写，返回 `confirmation_required` + `confirmToken` + `agentInstruction`，退出码 6；确认码绑定表与云端快照，变化即失效。写后回读最终一致，不符时按 READBACK_DELAYS_MS 重读（只重读不重写）。权限 `developer-product:read/write`。
+- 离线：`tests/devproducts.test.ts`；真实写：`scripts/devproducts-smoke.ts`，环境变量 `RBX_LIVE_DEVPRODUCTS_UNIVERSE`，命令 `npm run test:live:devproducts`。备份：应用数据目录 `devproduct-backups/`。

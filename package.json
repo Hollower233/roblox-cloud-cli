@@ -25,6 +25,7 @@
     "test:live:cloud": "tsx scripts/cloud-management-smoke.ts",
     "test:live:places": "tsx scripts/places-smoke.ts",
     "test:live:icons": "tsx scripts/icon-tasks-smoke.ts",
+    "test:live:devproducts": "tsx scripts/devproducts-smoke.ts",
     "dev": "tsx src/cli/main.ts"
   },
   "dependencies": {

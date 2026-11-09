@@ -707,3 +707,49 @@ SDK 导出 `listPlaces(http, universeId)`、`getPlace(http, universeId, placeId)
 $env:RBX_LIVE_PLACES_UNIVERSE = '<测试 Universe ID>'
 npm run test:live:places
 ```
+
+## 开发者产品同步（Studio 开发者产品表 → 宇宙）
+
+以 Studio 的 `game.ServerStorage["项目文档"]["开发者产品"]`（ModuleScript）为唯一来源，单向同步到一个或多个宇宙的开发者产品；不从宇宙拉取、不回写 Studio。
+
+```lua
+-- 开发者产品：en = Roblox 商品名（同步主键，与游戏代码 productKey 一致）；zh 仅供阅读，不同步；price 为 Robux 正整数（写算好的值，不写公式）。
+-- 同步：export_rbxm 导出本模块后执行 rbx devproduct sync <游戏...> --source ./开发者产品.rbxm
+return {
+	{ en = "Keep Streak", zh = "保持连胜", price = 19 },
+	{ en = "Starter Pack", zh = "新手礼包", price = 49 },
+}
+```
+
+导出：robloxstudio-mcp 的 `export_rbxm` 导出 `game.ServerStorage["项目文档"]["开发者产品"]` 为 `.rbxm`，作为 `--source`。只允许 `en`、`zh`、`price` 三个字段；`en` 为空、首尾有空格或重复，`price` 不是正整数，出现未知字段或空表时整次报错，不发任何请求。
+
+```sh
+rbx devproduct list "斗球球开发服"
+rbx devproduct sync "斗球球开发服" "BVB TEST" --source ./开发者产品.rbxm
+rbx devproduct sync "斗球球开发服" "BVB TEST" --source ./开发者产品.rbxm --confirm 7f3a9c0d12ab
+```
+
+- `list <游戏>`：只读，分页拉取到最后一页（`nextPageToken` 为空），列出 ProductId、价格、是否在售、是否开地区定价、名称，重名商品带警告（退出码 3）。任何一页失败或页标记重复即报错，不输出半份列表。
+- `sync <游戏...> --source <rbxm>`：每个宇宙先完整拉取商品列表，再按英文名精确匹配：
+  1. 匹配上：仅价格不同时只 PATCH `price`，其他字段不动。
+  2. 匹配不上：优先复用闲置商品（云端有、表里没有、非 immutable），按 ProductId 从小到大依次分给表中顺序靠前的行；复用会改 `name`、`price`，并设为在售、关闭地区定价、清空描述，图标保留原样。
+  3. 闲置用完后新建：在售、关闭地区定价，无描述和图标。
+  4. 未被复用的闲置商品只在结果中列出，不删除、不下架。
+- 某个宇宙商品列表拉不全，或存在重名商品时，该宇宙整体拒绝（`PRODUCT_LIST_INCOMPLETE` / `DUPLICATE_PRODUCT_NAMES`），不写入；其他宇宙照常。
+
+**两步确认（仅复用时）**：diff 中没有 `reuse` 时直接写入，返回 diff 与逐项回读结果。只要任一宇宙出现 `reuse`，所有宇宙整批都不写入，返回 `status: "confirmation_required"`、`confirmToken`、`agentInstruction`，退出码 **6**。Agent 必须把完整 diff（每条 reuse 的旧名 → 新名）展示给用户，获得明确同意后用相同参数加 `--confirm <confirmToken>` 再执行，不得自行确认。确认码由表内容和各宇宙云端快照计算；执行前重新拉取并重算，表或云端有任何变化时确认码失效，返回 `stale: true` 和新的 diff/确认码，不写入。
+
+**风险（由使用者把关）**：表必须列全游戏实际使用的商品——代码里写死但没进表的商品名会被当作闲置改名复用。被复用的旧商品若还有未处理完的收据，Roblox 补发时会按新商品发货。
+
+写入前把该宇宙全部商品与计划动作备份到应用数据目录 `devproduct-backups/`（失败则不写该宇宙）；每次写入后读取单个商品核对名称、价格与在售状态；该读取是最终一致的（实测约 2 秒内会在新旧值间跳动，新建商品可能短暂 404），不一致时按 1/2/3/5 秒间隔重读，最多 5 次，结果中 `readbacks` 为读取次数；地区定价不参与核对。写入不自动重试；`failed` 为明确拒绝，`unverified` 为响应丢失或回读不符，先 `devproduct list` 核对再决定是否重跑（重跑前要确认 create 是否已生效，避免重名）。列表同样可能滞后，刚新建后立即重跑 sync 可能看不到新商品而再次新建，新建后请间隔片刻再重跑。存在失败、未确认或被拒绝的宇宙时状态为 `partial`、退出码 3。
+
+API Key 需目标宇宙的 `developer-product:read`（list/sync）与 `developer-product:write`（sync 写入）。接口：[Developer Products (Beta)](https://create.roblox.com/docs/cloud/reference/features/developer-products)。SDK：`listDeveloperProducts`、`planUniverse`、`syncDeveloperProducts`、`loadDeveloperProductTable`。
+
+离线测试：`tests/devproducts.test.ts`。显式真实写测试：
+
+```powershell
+$env:RBX_LIVE_DEVPRODUCTS_UNIVERSE = '<开发服 Universe ID>'
+npm run build; npm run test:live:devproducts
+```
+
+它在开发宇宙验证完整翻页、改价并还原、新建、复用的两步确认（无确认码/错误码/过期码均不写入）。开发者产品无法删除，脚本最多保留一个 `ZZ CLI Test …` 商品（下架状态），后续运行复用它；结束时还原所有原商品价格。

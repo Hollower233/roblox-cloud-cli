@@ -1,7 +1,7 @@
 import { AppError } from '../core/errors.js';
 
-/** Minimal Lua tokenizer for data modules: `return { ... }` with string/identifier fields only. */
-type Token = { type: 'string' | 'name' | 'punct' | 'eof'; value: string; at: number };
+/** Minimal Lua tokenizer for data modules: `return { ... }` with string, number and identifier fields only. */
+type Token = { type: 'string' | 'number' | 'name' | 'punct' | 'eof'; value: string; at: number };
 export const MASTER_NAME = '本地化表';
 const bad = (module: string, at: number, message: string) => new AppError('ARGUMENT_ERROR', `${module}: ${message} (offset ${at}).`);
 
@@ -55,6 +55,8 @@ function tokenize(source: string, module: string): Token[] {
         tokens.push({ type: 'string', value: text, at: i }); i = long.end + long.level + 2; continue;
       }
     }
+    const number = /^-?\d+(?:\.\d+)?(?![A-Za-z0-9_.])/.exec(source.slice(i, i + 64));
+    if (number) { tokens.push({ type: 'number', value: number[0], at: i }); i += number[0].length; continue; }
     const name = /^[A-Za-z_][A-Za-z0-9_]*/.exec(source.slice(i, i + 256));
     if (name) { tokens.push({ type: 'name', value: name[0], at: i }); i += name[0].length; continue; }
     if ('{}[]=,;'.includes(c)) { tokens.push({ type: 'punct', value: c, at: i }); i++; continue; }
@@ -98,6 +100,33 @@ export function parseMasterSource(source: string, module = MASTER_NAME): MasterR
     if (seen.has(row.en)) throw bad(module, start.at, `duplicate source ${JSON.stringify(row.en)}`);
     seen.add(row.en);
     rows.push(row as MasterRow);
+    p.separator();
+  }
+  p.expect('eof');
+  return rows;
+}
+
+export type RecordValue = string | number;
+export interface RecordRow { fields: Record<string, RecordValue>; at: number }
+
+/** Parse a generic row module: `return { { key = "text" | 123, ... }, ... }`. Duplicate keys in a row are rejected. */
+export function parseRecordRows(source: string, module: string): RecordRow[] {
+  const p = new Parser(tokenize(source, module), module);
+  p.expect('name', 'return'); p.expect('punct', '{');
+  const rows: RecordRow[] = [];
+  while (!p.accept('}')) {
+    const start = p.expect('punct', '{');
+    const fields: Record<string, RecordValue> = Object.create(null);
+    while (!p.accept('}')) {
+      const key = p.expect('name');
+      p.expect('punct', '=');
+      const value = p.next();
+      if (value.type !== 'string' && value.type !== 'number') throw bad(module, value.at, `field ${key.value} must be a string or number`);
+      if (key.value in fields) throw bad(module, key.at, `duplicate field ${key.value}`);
+      fields[key.value] = value.type === 'number' ? Number(value.value) : value.value;
+      p.separator();
+    }
+    rows.push({ fields, at: start.at });
     p.separator();
   }
   p.expect('eof');
