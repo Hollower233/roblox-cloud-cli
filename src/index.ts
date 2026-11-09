@@ -60,3 +60,5 @@ export { DeepSeekClient, TranslationCache, translate, checkTranslation } from '.
 export type { TranslationJob, TranslationOutcome, Usage } from './translation/deepseek.js';
 export { closeStudio, findStudioExecutable, isReadyTitle, listStudioSessions, openStudio, parseStudioProcess, resolveStudioTarget, windowsStudioSystem } from './studio/launch.js';
 export type { CloseOptions, CloseResult, OpenOptions, OpenResult, StudioProcess, StudioSystem, StudioTarget } from './studio/launch.js';
+export { latestPlaceVersion, normalizeLabel, pickSession, placeEntries, planPublishTarget, publishAs, publishScriptPath, resolvePublishGame, searchTerm, windowsPublishAsSystem, PERSONAL_OWNER_LABEL } from './studio/publish-as.js';
+export type { PlaceEntry, PlaceVersion, PublishAsOptions, PublishAsResult, PublishAsSystem, PublishTarget, PublishUiArgs, PublishUiResult, PublishVerification } from './studio/publish-as.js';

@@ -667,6 +667,24 @@ rbx studio close --all                # 软关闭全部编辑会话（不可与 
 - 新启动时取 `%LOCALAPPDATA%\Roblox\Versions` 下修改时间最新的 `RobloxStudioBeta.exe`（不读注册表协议，注册表可能指向旧版本），参数为 `-task EditPlace -placeId <P> -universeId <U>`。这是 Studio 自身使用但未公开文档化的参数，Roblox 改版可能失效。
 - 默认等待窗口标题变为 `<名称> - Roblox Studio` 视为加载完成（`ready: true`），默认超时 120 秒，超时返回 `TIMEOUT`。加载完成不代表 MCP 插件已连接，连接状态以 MCP 为准。
 - 模块：`src/studio/launch.ts`；SDK：`resolveStudioTarget`、`openStudio`、`listStudioSessions`、`windowsStudioSystem`。离线测试：`tests/studio.test.ts`。
+## Studio Publish As（Windows）
+
+把本机已打开的 Studio 编辑会话，通过 File > Publish As 发布到目录中任意游戏的指定 Place，或作为新 Place 加入。面向 agent 调用，不做交互确认；先用 `--dry-run` 检查。
+
+```sh
+rbx studio publish-as --to 10318710736 --place Trade --dry-run --json
+rbx studio publish-as --to "斗球球开发服" --place 100332154273074 --json
+rbx studio publish-as --to "1v1 Snipe" --new --pid 43004 --json
+```
+
+- `--to`：Universe ID 或本地目录中的精确游戏名；`--place`：Place ID 或精确 Place 名；`--new`：新建 Place。两者必选其一。
+- `--pid`：源 Studio 编辑进程，多个会话时必填（见 `studio list`）。`--debug-dir` 保存每一步截图。
+- 目标先由本地目录（群组名、游戏名）和公开 Place 目录换算成对话框显示的文字；个人游戏对应 `My Experiences`。同一 Owner 下同名游戏、同一游戏内同名 Place 在操作界面前直接拒绝（退出码 2），因为对话框无法区分。
+- 界面操作由内置脚本 `src/studio/publish-as.ps1` 完成：UI Automation 定位窗口并展开 File 菜单，Qt 不暴露的部分用 PrintWindow 截图 + Windows 中英文 OCR + PostMessage 后台点击/按键，坐标按对话框实际 DPI 缩放；每一步校验，识别不到就停。
+- 发布后复核：覆盖时比较 Assets API 中 Place 的最新版本号（需 API Key 的 `asset:read`）；新建时在 Place 目录中查找新增 ID。界面成功但 API 未确认时状态为 `partial`（退出码 3）。点击 Overwrite/Create 之前的失败一定未发布；点击之后界面读取失败且未见新版本时报错 `STUDIO_UI_ERROR` 并说明状态未知，先检查再重试。
+- 限制：Studio 必须是英文界面且不能最小化；不移动真实鼠标，但展开菜单会把 Studio 短暂拉到前台、对话框会在屏幕上显示约 10 秒，期间操作电脑可能导致失败。个人私密游戏不在目录中，同名冲突只能在界面上发现。
+- 离线验证：`tests/studio-publish-as.test.ts`。
+
 ## Place 服务器人数上限
 
 一个 Universe 可以包含多个 Place，人数上限按 Place 分别设置。`--universe` 接受 Universe ID 或本地游戏目录中的精确名称。

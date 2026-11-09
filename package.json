@@ -17,7 +17,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').cpSync('src/studio/publish-as.ps1','dist/studio/publish-as.ps1')\"",
     "check": "tsc -p tsconfig.check.json",
     "test": "tsx --test tests/*.test.ts",
     "test:live": "tsx scripts/live-smoke.ts",

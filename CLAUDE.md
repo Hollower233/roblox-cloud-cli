@@ -141,3 +141,11 @@
 - 已打开同 Place 的编辑会话（命令行 `-task EditPlace -placeId`）只切前台；否则用 `Versions` 下最新 `RobloxStudioBeta.exe -task EditPlace -placeId -universeId` 启动，窗口标题变为 `* - Roblox Studio` 视为加载完成。参数未公开文档化。
 - `studio close [games...] [--place] [--pid] [--all] [--force] [--timeout]`：默认软关闭（CloseMainWindow，Studio 自行弹保存提示，超时未关返回 `pending`），`--force` 结束编辑器及 `-editpid` 指向它的 Team Test 进程；`--all` 不可与 `--force` 同用。
 - 离线验证：`tests/studio.test.ts`。
+
+## Studio Publish As
+
+- 目标解析、查重、发布编排与版本复核：`src/studio/publish-as.ts`；界面自动化脚本：`src/studio/publish-as.ps1`（仅 ASCII，参数为 base64 JSON，stdout 输出一行 `@@RESULT {json}`，进度写 stderr），构建时复制到 `dist/studio/`。
+- 命令 `studio publish-as --to <game> (--place <place> | --new) [--pid] [--dry-run] [--debug-dir]`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅 Windows、英文 Studio 界面。
+- 脚本注意：PowerShell 变量名不区分大小写，新增变量不得与已有变量（含 `$script:` 作用域）同名。
+- 复核：覆盖用 Assets API 版本号（`asset:read`），新建用 Place 目录新增 ID；点击按钮前失败必未发布。
+- 离线验证：`tests/studio-publish-as.test.ts`；真实界面只用 `--dry-run` 验证，真实发布需用户明确要求。
