@@ -11,8 +11,8 @@ import { resolveProfilePlayers } from '../src/profiles/copy.js';
 import { HttpClient } from '../src/transport/http-client.js';
 
 const saved = [
-  { userId: '123', name: 'ExampleFries', alias: '水木' },
-  { userId: '456', name: 'ExampleCaptain', alias: '船长' },
+  { userId: '123', name: 'ExamplePlayerOne', alias: '示例甲' },
+  { userId: '456', name: 'ExamplePlayerTwo', alias: '示例乙' },
 ];
 async function temporary(action: (home: string) => Promise<void>) {
   const home = await mkdtemp(join(tmpdir(), 'rbx-players-'));
@@ -23,32 +23,32 @@ const offline = () => new HttpClient({ fetch: async () => { throw new Error('Une
 test('catalog persists across instances and accounts; UID updates preserve optional alias', async () => temporary(async home => {
   const local = new LocalStore(home), service = new PlayerCatalogService(local);
   assert.deepEqual(await service.list(), []);
-  await service.add(saved[0]!, '水木');
-  await service.add(saved[1]!, '船长');
-  await service.add({ userId: '123', name: 'RenamedFries' });
+  await service.add(saved[0]!, '示例甲');
+  await service.add(saved[1]!, '示例乙');
+  await service.add({ userId: '123', name: 'RenamedPlayerOne' });
   await local.saveConfig({ schemaVersion: 1, currentUserId: '999', accounts: {} });
   const next = new PlayerCatalogService(new LocalStore(home));
   assert.equal((await next.list()).length, 2);
-  assert.deepEqual(await next.find('水木'), [{ userId: '123', name: 'RenamedFries', alias: '水木' }]);
-  await next.alias('fries', '测试号');
+  assert.deepEqual(await next.find('示例甲'), [{ userId: '123', name: 'RenamedPlayerOne', alias: '示例甲' }]);
+  await next.alias('playerone', '测试号');
   assert.equal((await next.find('测试号'))[0]!.userId, '123');
-  await next.remove('CAPTAIN');
+  await next.remove('PLAYERTWO');
   assert.equal((await next.list()).length, 1);
 }));
 
 test('matching prioritizes exact name/alias, supports UID, and fragments only match usernames', () => {
-  const players = [...saved, { userId: '789', name: 'Fries', alias: '木' }];
-  assert.equal(findPlayers('FRIES', players)[0]!.userId, '789');
+  const players = [...saved, { userId: '789', name: 'PlayerOne', alias: '例' }];
+  assert.equal(findPlayers('PLAYERONE', players)[0]!.userId, '789');
   assert.equal(findPlayers('example', players).length, 2);
-  assert.equal(findPlayers('水', players).length, 0);
-  assert.equal(findPlayers('123', players)[0]!.name, 'ExampleFries');
+  assert.equal(findPlayers('示', players).length, 0);
+  assert.equal(findPlayers('123', players)[0]!.name, 'ExamplePlayerOne');
 });
 
 test('profile resolver uses local aliases/fragments/IDs, deduplicates, and does not call network', async () => {
-  assert.deepEqual(await resolveProfilePlayers('FRIES,水木,123,船长,999', offline(), saved), [
-    { userId: '123', name: 'ExampleFries' }, { userId: '456', name: 'ExampleCaptain' }, { userId: '999', name: '999' },
+  assert.deepEqual(await resolveProfilePlayers('PLAYERONE,示例甲,123,示例乙,999', offline(), saved), [
+    { userId: '123', name: 'ExamplePlayerOne' }, { userId: '456', name: 'ExamplePlayerTwo' }, { userId: '999', name: '999' },
   ]);
-  await assert.rejects(resolveProfilePlayers('example', offline(), saved), /Candidates: ExampleFries \(123\).*ExampleCaptain \(456\)/);
+  await assert.rejects(resolveProfilePlayers('example', offline(), saved), /Candidates: ExamplePlayerOne \(123\).*ExamplePlayerTwo \(456\)/);
   await assert.rejects(resolveProfilePlayers('未知', offline(), saved), { code: 'ARGUMENT_ERROR' });
 });
 
@@ -60,9 +60,9 @@ test('unknown usernames retain online lookup without saving; invalid responses f
     assert.deepEqual(JSON.parse(options!.body as string), { usernames: ['newexample'], excludeBannedUsers: false });
     return Response.json({ data: [{ requestedUsername: 'newexample', name: 'NewExample', id: 789 }] });
   } });
-  const result = await resolveProfilePlayers('水木,NewExample', http, saved);
+  const result = await resolveProfilePlayers('示例甲,NewExample', http, saved);
   assert.equal(calls, 1);
-  assert.deepEqual(result, [{ userId: '123', name: 'ExampleFries' }, { userId: '789', name: 'NewExample' }]);
+  assert.deepEqual(result, [{ userId: '123', name: 'ExamplePlayerOne' }, { userId: '789', name: 'NewExample' }]);
   const service = new PlayerCatalogService(new LocalStore(home));
   assert.deepEqual(await service.list(), []);
   await service.add(result[1]!, '新玩家');
@@ -112,8 +112,8 @@ test('compiled player CLI supports offline JSON list/find/alias/remove without c
     return JSON.parse(child.stdout).data;
   };
   assert.equal(run('list').players.length, 2);
-  assert.equal(run('find', 'FRIES').players[0].userId, '123');
-  assert.equal(run('alias', '水木', '测试号').player.alias, '测试号');
+  assert.equal(run('find', 'PLAYERONE').players[0].userId, '123');
+  assert.equal(run('alias', '示例甲', '测试号').player.alias, '测试号');
   assert.equal(run('remove', '测试号').removed.userId, '123');
   assert.equal(run('list').players.length, 1);
 }));
@@ -123,11 +123,11 @@ test('compiled add queries username without credentials and persists canonical u
   await writeFile(mock, `globalThis.fetch = async (url, options) => {
     if (String(url) !== 'https://users.roblox.com/v1/usernames/users') throw new Error('Unexpected URL');
     if (new Headers(options.headers).has('x-api-key')) throw new Error('Unexpected credential');
-    if (JSON.parse(options.body).usernames[0] !== 'examplefries') throw new Error('Unexpected username');
-    return Response.json({ data: [{ requestedUsername: 'examplefries', name: 'ExampleFries', id: 123 }] });
+    if (JSON.parse(options.body).usernames[0] !== 'exampleplayerone') throw new Error('Unexpected username');
+    return Response.json({ data: [{ requestedUsername: 'exampleplayerone', name: 'ExamplePlayerOne', id: 123 }] });
   };`);
   const env = { ...process.env }; delete env.ROBLOX_API_KEY;
-  const child = spawnSync(process.execPath, ['--import', pathToFileURL(mock).href, resolve('dist/cli/main.js'), 'player', 'add', 'examplefries', '--alias', '水木', '--home', home, '--json'], { env, encoding: 'utf8' });
+  const child = spawnSync(process.execPath, ['--import', pathToFileURL(mock).href, resolve('dist/cli/main.js'), 'player', 'add', 'exampleplayerone', '--alias', '示例甲', '--home', home, '--json'], { env, encoding: 'utf8' });
   assert.equal(child.status, 0, child.stdout + child.stderr);
   assert.deepEqual(JSON.parse(child.stdout).data.player, saved[0]);
   assert.deepEqual((await new LocalStore(home).players()).players, [saved[0]]);
@@ -138,10 +138,10 @@ test('existing ban preview accepts saved aliases and stops on ambiguous fragment
   const mock = join(home, 'no-network.mjs');
   await writeFile(mock, "globalThis.fetch = async () => { process.exit(90); };");
   const run = (player: string) => spawnSync(process.execPath, ['--import', pathToFileURL(mock).href, resolve('dist/cli/main.js'), 'ban', '999', '--player', player, '--duration', '30m', '--reason', 'fixture', '--dry-run', '--home', home, '--json'], { env: { ...process.env, ROBLOX_API_KEY: 'fake-offline-key' }, encoding: 'utf8' });
-  const success = run('水木');
+  const success = run('示例甲');
   assert.equal(success.status, 0, success.stdout + success.stderr);
-  assert.deepEqual(JSON.parse(success.stdout).data.player, { userId: '123', name: 'ExampleFries' });
+  assert.deepEqual(JSON.parse(success.stdout).data.player, { userId: '123', name: 'ExamplePlayerOne' });
   const ambiguous = run('example');
   assert.equal(ambiguous.status, 2);
-  assert.match(JSON.parse(ambiguous.stdout).error.message, /Candidates: ExampleFries \(123\).*ExampleCaptain \(456\)/);
+  assert.match(JSON.parse(ambiguous.stdout).error.message, /Candidates: ExamplePlayerOne \(123\).*ExamplePlayerTwo \(456\)/);
 }));

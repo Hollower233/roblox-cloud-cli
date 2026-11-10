@@ -46,10 +46,10 @@ test('an already open place is focused instead of launched again', async () => {
   assert.deepEqual(launched, []); assert.deepEqual(focused, [42]);
 });
 test('launch passes EditPlace arguments and waits for the loaded title, following PID hand-off', async () => {
-  const { system, launched } = fakeSystem({ rows: [[], [edit(77, '100', 'Roblox Studio')], [edit(77, '100', 'BVB - Roblox Studio')]] });
+  const { system, launched } = fakeSystem({ rows: [[], [edit(77, '100', 'Roblox Studio')], [edit(77, '100', 'Example Test - Roblox Studio')]] });
   const result = await openStudio(system, { placeId: '100', universeId: '7' }, { pollMs: 1000 });
   assert.deepEqual(launched, [['C:\\L\\new\\RobloxStudioBeta.exe', '-task', 'EditPlace', '-placeId', '100', '-universeId', '7']]);
-  assert.equal(result.ready, true); assert.equal(result.pid, 77); assert.equal(result.title, 'BVB - Roblox Studio');
+  assert.equal(result.ready, true); assert.equal(result.pid, 77); assert.equal(result.title, 'Example Test - Roblox Studio');
 });
 test('no-wait returns immediately and a stuck load times out', async () => {
   const quick = await openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { wait: false });
@@ -57,11 +57,11 @@ test('no-wait returns immediately and a stuck load times out', async () => {
   await assert.rejects(openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { timeoutMs: 5000, pollMs: 1000 }), (e: AppError) => e.code === 'TIMEOUT');
 });
 test('targets resolve from the catalog first, then public endpoints', async () => {
-  const games = [{ universeId: '7', name: 'BVB TEST', rootPlaceId: '100' }, { universeId: '8', name: 'Dup' }, { universeId: '9', name: 'dup' }];
+  const games = [{ universeId: '7', name: 'Example Test', rootPlaceId: '100' }, { universeId: '8', name: 'Dup' }, { universeId: '9', name: 'dup' }];
   const none = http({});
-  assert.deepEqual(await resolveStudioTarget(none, { game: 'bvb test' }, games), { placeId: '100', universeId: '7', name: 'BVB TEST' });
-  assert.deepEqual(await resolveStudioTarget(none, { game: '7' }, games), { placeId: '100', universeId: '7', name: 'BVB TEST' });
-  assert.deepEqual(await resolveStudioTarget(none, { place: '100' }, games), { placeId: '100', universeId: '7', name: 'BVB TEST' });
+  assert.deepEqual(await resolveStudioTarget(none, { game: 'example test' }, games), { placeId: '100', universeId: '7', name: 'Example Test' });
+  assert.deepEqual(await resolveStudioTarget(none, { game: '7' }, games), { placeId: '100', universeId: '7', name: 'Example Test' });
+  assert.deepEqual(await resolveStudioTarget(none, { place: '100' }, games), { placeId: '100', universeId: '7', name: 'Example Test' });
   await assert.rejects(resolveStudioTarget(none, { game: 'DUP' }, games), (e: AppError) => e.code === 'ARGUMENT_ERROR' && e.message.includes('8, 9'));
   await assert.rejects(resolveStudioTarget(none, { game: 'missing' }, games), (e: AppError) => e.code === 'ARGUMENT_ERROR');
   const remote = http({ 'https://develop.roblox.com/v1/universes/55': { id: 55, rootPlaceId: 555, name: 'Remote' }, 'https://apis.roblox.com/universes/v1/places/666/universe': { universeId: 66 } });

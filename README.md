@@ -15,6 +15,8 @@ rbx --help
 
 不安装全局命令也可以执行 `node dist/cli/main.js` 或 `npm run dev --`。
 
+示例中的游戏名、玩家名和目标 ID 均为演示值。执行前请替换为自己的目标。命令需要确认时，请使用它返回的 `confirmToken`。
+
 ## 凭证
 
 ```sh
@@ -383,13 +385,13 @@ API Key 需对目标体验拥有 universe.user-restriction:write；查询需 uni
 ## 玩家清单
 
 ```sh
-rbx player add FriesOverEverything
-rbx player add FriesOverEverything --alias 水木
-rbx player add AtysGames --alias 船长
+rbx player add ExamplePlayerOne
+rbx player add ExamplePlayerOne --alias 示例甲
+rbx player add ExamplePlayerTwo --alias 示例乙
 rbx player list
-rbx player find fries
-rbx player alias FriesOverEverything 水木
-rbx player remove FriesOverEverything
+rbx player find PlayerOne
+rbx player alias ExamplePlayerOne 示例甲
+rbx player remove ExamplePlayerOne
 ```
 
 `add` 使用真实 Roblox 用户名在线查询 UID，不接受 Display Name、别名或 UID，也不需要 API Key。只有显式添加才保存；重复 UID 更新用户名，未传 `--alias` 时保留已有别名。`alias` 设置或替换一个别名。别名支持中文、最多 100 字符，不允许逗号、控制字符或纯数字。`remove` 仅移除本地记录。
@@ -399,8 +401,8 @@ rbx player remove FriesOverEverything
 `profile history`、`profile copy`（含 `--to`）、`profile clear`、`ban`、`unban` 和 `ban-status` 使用同样的清单解析。唯一片段或别名命中后直接使用保存的 UID；清单未命中的真实用户名保留在线查询，查询结果不自动写入清单。
 
 ```sh
-rbx profile history "BVB TEST" --player fries
-rbx profile history "BVB TEST" --player 水木
+rbx profile history "Example Test" --player PlayerOne
+rbx profile history "Example Test" --player 示例甲
 ```
 
 清单存于应用数据目录的 `players.json`，不按登录账号或游戏拆分。用户名是添加时的快照；玩家改名后可用新用户名重新 `add`，相同 UID 会更新原记录。`--json` 的列表/查询数据为 `{ players: [...] }`，添加/修改为 `{ player: ... }`，移除为 `{ removed: ... }`；每条记录为 `{ userId, name, alias? }`。
@@ -495,7 +497,7 @@ await localization.write('123', { ja: { title: 'サンプルゲーム' } }, {
 
 ```bash
 # 新游戏：源语言设为 en，启用 18 种固定语言并开启自动翻译，使用翻译表、开启自动采集文本、关闭自动删除（幂等）
-rbx localization enable "Ball VS Ball" --dry-run
+rbx localization enable "Example Production" --dry-run
 rbx localization enable 123 456
 
 # DeepSeek：Key 用 DPAPI 保存（DEEPSEEK_API_KEY 优先）；每次运行都会拉取模型列表
@@ -648,15 +650,15 @@ SDK 对应调用为 `restartUniverseServers(http, '123', { all: false, countdown
 ## 打开 Studio 项目（Windows）
 
 ```powershell
-rbx studio open "BVB TEST"            # 本地目录中的游戏名（不区分大小写），打开根 Place
-rbx studio open 10768830317           # Universe ID
-rbx studio open --place 110346202702661
-rbx --json studio open "BVB TEST" --timeout 180
-rbx studio open "BVB TEST" --no-wait  # 启动后立即返回
+rbx studio open "Example Test"            # 本地目录中的游戏名（不区分大小写），打开根 Place
+rbx studio open "<UniverseId>"           # Universe ID
+rbx studio open --place "<RootPlaceId>"
+rbx --json studio open "Example Test" --timeout 180
+rbx studio open "Example Test" --no-wait  # 启动后立即返回
 rbx studio list                       # 已打开的编辑会话：PID、Place、Universe、窗口标题
-rbx studio close "BVB TEST" 封面测试   # 软关闭，可一次传多个游戏
-rbx studio close --place 110346202702661
-rbx studio close --pid 18908 --force  # 强制结束编辑器及其 Team Test 进程，丢弃未保存改动
+rbx studio close "Example Test" "Example Preview"   # 软关闭，可一次传多个游戏
+rbx studio close --place "<RootPlaceId>"
+rbx studio close --pid "<EditorPid>" --force  # 强制结束编辑器及其 Team Test 进程，丢弃未保存改动
 rbx studio close --all                # 软关闭全部编辑会话（不可与 --force 同用）
 ```
 
@@ -672,9 +674,9 @@ rbx studio close --all                # 软关闭全部编辑会话（不可与 
 把本机已打开的 Studio 编辑会话，通过 File > Publish As 发布到目录中任意游戏的指定 Place，或作为新 Place 加入。面向 agent 调用，不做交互确认；先用 `--dry-run` 检查。
 
 ```sh
-rbx studio publish-as --to 10318710736 --place Trade --dry-run --json
-rbx studio publish-as --to "斗球球开发服" --place 100332154273074 --json
-rbx studio publish-as --to "1v1 Snipe" --new --pid 43004 --json
+rbx studio publish-as --to "<UniverseId>" --place "Example Lobby" --dry-run --json
+rbx studio publish-as --to "Example Development" --place "<PlaceId>" --json
+rbx studio publish-as --to "Example Sandbox" --new --pid "<EditorPid>" --json
 ```
 
 - `--to`：Universe ID 或本地目录中的精确游戏名；`--place`：Place ID 或精确 Place 名；`--new`：新建 Place。两者必选其一。
@@ -716,17 +718,17 @@ npm run test:live:places
 -- 开发者产品：en = Roblox 商品名（同步主键，与游戏代码 productKey 一致）；zh 仅供阅读，不同步；price 为 Robux 正整数（写算好的值，不写公式）。
 -- 同步：export_rbxm 导出本模块后执行 rbx devproduct sync <游戏...> --source ./开发者产品.rbxm
 return {
-	{ en = "Keep Streak", zh = "保持连胜", price = 19 },
-	{ en = "Starter Pack", zh = "新手礼包", price = 49 },
+	{ en = "Example Boost", zh = "示例加成", price = 19 },
+	{ en = "Example Refill", zh = "示例补给", price = 49 },
 }
 ```
 
 导出：robloxstudio-mcp 的 `export_rbxm` 导出 `game.ServerStorage["项目文档"]["开发者产品"]` 为 `.rbxm`，作为 `--source`。只允许 `en`、`zh`、`price` 三个字段；`en` 为空、首尾有空格或重复，`price` 不是正整数，出现未知字段或空表时整次报错，不发任何请求。
 
 ```sh
-rbx devproduct list "斗球球开发服"
-rbx devproduct sync "斗球球开发服" "BVB TEST" --source ./开发者产品.rbxm
-rbx devproduct sync "斗球球开发服" "BVB TEST" --source ./开发者产品.rbxm --confirm 7f3a9c0d12ab
+rbx devproduct list "Example Development"
+rbx devproduct sync "Example Development" "Example Test" --source ./开发者产品.rbxm
+rbx devproduct sync "Example Development" "Example Test" --source ./开发者产品.rbxm --confirm "<confirmToken>"
 ```
 
 - `list <游戏>`：只读，分页拉取到最后一页（`nextPageToken` 为空），列出 ProductId、价格、是否在售、是否开地区定价、名称，重名商品带警告（退出码 3）。任何一页失败或页标记重复即报错，不输出半份列表。

@@ -10,11 +10,11 @@ function game(universeId: string, name: string, owner: { id: string; name: strin
   return { universeId, name, owner, visibility: 'PRIVATE', ccu: 0, permissions: { canManage: true, canCloudEdit: true }, discoveredAt: '', lastSeenAt: '', discoveryState: 'seen', errors: [] };
 }
 const games = [
-  game('7', 'Ball Dev'), game('8', '农夫山泉'), game('9', '农夫山泉'), game('10', '⚔️ 球对球 '),
-  game('11', 'Ball Dev', { id: '60', name: 'Other Group', type: 'Group' }), game('12', 'Mine', { id: ME, name: 'me', type: 'User' }),
+  game('7', 'Example Development'), game('8', '同名示例'), game('9', '同名示例'), game('10', '⚔️ 示例竞技场 '),
+  game('11', 'Example Development', { id: '60', name: 'Other Group', type: 'Group' }), game('12', 'Mine', { id: ME, name: 'me', type: 'User' }),
   game('13', 'Theirs', { id: '2000', name: 'someone', type: 'User' }),
 ];
-const places = [{ placeId: '100', name: 'Ball Dev' }, { placeId: '101', name: 'Trade' }];
+const places = [{ placeId: '100', name: 'Example Development' }, { placeId: '101', name: 'Market' }];
 
 function fakeHttp(routes: Record<string, unknown[]>) {
   const hits: string[] = [];
@@ -34,16 +34,16 @@ function fakeSystem(result: Partial<PublishUiResult>) {
   };
   return { system, calls };
 }
-const session = { pid: 42, placeId: '100', universeId: '7', title: 'Ball Dev - Roblox Studio' };
+const session = { pid: 42, placeId: '100', universeId: '7', title: 'Example Development - Roblox Studio' };
 const versionsUrl = 'https://apis.roblox.com/assets/v1/assets/101/versions?maxPageSize=1';
 const version = (n: number) => ({ assetVersions: [{ path: `assets/101/versions/${n}`, createTime: `2026-01-0${n}T00:00:00Z`, published: true }] });
 
 test('labels normalize like the OCR matcher and search text skips emoji and brackets', () => {
-  assert.equal(normalizeLabel('⚔️ 球对球 '), normalizeLabel('球对球'));
-  assert.equal(normalizeLabel('Trade'), normalizeLabel('Tra de'));
-  assert.equal(normalizeLabel('Ball 1'), normalizeLabel('BaII l'));
-  assert.equal(searchTerm('⚔️ 球对球 '), '球对球');
-  assert.equal(searchTerm('[TEST SERVER — CLOSED] Play [Ball VS Ball]'), 'Ball VS Ball');
+  assert.equal(normalizeLabel('⚔️ 示例竞技场 '), normalizeLabel('示例竞技场'));
+  assert.equal(normalizeLabel('Market'), normalizeLabel('Mar ket'));
+  assert.equal(normalizeLabel('Hall 1'), normalizeLabel('HaII l'));
+  assert.equal(searchTerm('⚔️ 示例竞技场 '), '示例竞技场');
+  assert.equal(searchTerm('[TEST SERVER — CLOSED] Play [Example Arena]'), 'Example Arena');
   assert.throws(() => searchTerm('⚔️'), (e: AppError) => e.code === 'ARGUMENT_ERROR');
 });
 test('source session is the explicit PID or the only open one', () => {
@@ -57,57 +57,57 @@ test('source session is the explicit PID or the only open one', () => {
 test('destination game resolves by ID or unique exact name from the catalog', () => {
   assert.equal(resolvePublishGame(games, '7').universeId, '7');
   assert.equal(resolvePublishGame(games, 'mine').universeId, '12');
-  assert.throws(() => resolvePublishGame(games, 'Ball Dev'), (e: AppError) => /Ambiguous/.test(e.message) && /Other Group/.test(e.message));
+  assert.throws(() => resolvePublishGame(games, 'Example Development'), (e: AppError) => /Ambiguous/.test(e.message) && /Other Group/.test(e.message));
   assert.throws(() => resolvePublishGame(games, '999'), (e: AppError) => /universe add 999/.test(e.message));
   assert.throws(() => resolvePublishGame(games, 'nope'), (e: AppError) => e.code === 'ARGUMENT_ERROR');
 });
 test('plan maps owners to dialog labels and places by ID or name', () => {
-  const { target, warnings } = planPublishTarget(games[0]!, games, places, ME, { value: 'trade' });
-  assert.equal(target.ownerLabel, 'Studio Group'); assert.equal(target.experience, 'Ball Dev');
-  assert.deepEqual(target.place, { placeId: '101', name: 'Trade' }); assert.equal(target.newPlace, false); assert.deepEqual(warnings, []);
+  const { target, warnings } = planPublishTarget(games[0]!, games, places, ME, { value: 'market' });
+  assert.equal(target.ownerLabel, 'Studio Group'); assert.equal(target.experience, 'Example Development');
+  assert.deepEqual(target.place, { placeId: '101', name: 'Market' }); assert.equal(target.newPlace, false); assert.deepEqual(warnings, []);
   assert.deepEqual(planPublishTarget(games[0]!, games, places, ME, { value: '100' }).target.place, places[0]);
   const mine = planPublishTarget(games[5]!, games, places, ME, { newPlace: true });
   assert.equal(mine.target.ownerLabel, 'My Experiences'); assert.equal(mine.target.place, undefined);
   assert.equal(mine.warnings[0]?.code, 'PERSONAL_PRIVATE_DISCOVERY_UNAVAILABLE');
-  assert.equal(planPublishTarget(games[3]!, games, places, ME, { newPlace: true }).target.experience, '⚔️ 球对球');
+  assert.equal(planPublishTarget(games[3]!, games, places, ME, { newPlace: true }).target.experience, '⚔️ 示例竞技场');
 });
 test('targets the dialog cannot tell apart are refused before any UI work', () => {
   assert.throws(() => planPublishTarget(games[1]!, games, places, ME, { newPlace: true }), (e: AppError) => /cannot tell 8 apart from 9/.test(e.message));
   // the same name under a different owner is fine
   assert.doesNotThrow(() => planPublishTarget(games[0]!, games, places, ME, { newPlace: true }));
-  const dupPlaces = [...places, { placeId: '102', name: 'trade ' }];
+  const dupPlaces = [...places, { placeId: '102', name: 'market ' }];
   assert.throws(() => planPublishTarget(games[0]!, games, dupPlaces, ME, { value: '101' }), (e: AppError) => /place 101 apart from 102/.test(e.message));
   assert.throws(() => planPublishTarget(games[0]!, games, places, ME, { value: '555' }), (e: AppError) => /not in universe 7/.test(e.message));
   assert.throws(() => planPublishTarget(games[6]!, games, places, ME, { newPlace: true }), (e: AppError) => /another user/.test(e.message));
   assert.throws(() => planPublishTarget(games[0]!, games, places, ME, {}), (e: AppError) => /exactly one/.test(e.message));
-  assert.throws(() => planPublishTarget(games[0]!, games, places, ME, { value: 'Trade', newPlace: true }), (e: AppError) => /exactly one/.test(e.message));
+  assert.throws(() => planPublishTarget(games[0]!, games, places, ME, { value: 'Market', newPlace: true }), (e: AppError) => /exactly one/.test(e.message));
 });
 test('overwrite passes dialog labels to the UI and confirms a new place version', async () => {
-  const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Trade' });
+  const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Market' });
   const { system, calls } = fakeSystem({ button: 'Overwrite', menuPath: 'keyboard+OCR' });
   const { client } = fakeHttp({ [versionsUrl]: [version(4), version(4), version(5)] });
   const { result, warnings } = await publishAs(system, client, session, target, { versions: client, pollMs: 1000 });
-  assert.deepEqual(calls, [{ pid: 42, group: 'Studio Group', experience: 'Ball Dev', search: 'Ball Dev', place: 'Trade', newPlace: false, dryRun: false }]);
+  assert.deepEqual(calls, [{ pid: 42, group: 'Studio Group', experience: 'Example Development', search: 'Example Development', place: 'Market', newPlace: false, dryRun: false }]);
   assert.equal(result.published, true);
   assert.deepEqual(result.verification, { state: 'verified', before: 4, after: 5, createTime: '2026-01-05T00:00:00Z' });
   assert.equal(result.ui.button, 'Overwrite'); assert.deepEqual(warnings, []);
   assert.equal('places' in result.target, false);
 });
 test('dry run makes no version calls and reports nothing published', async () => {
-  const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Trade' });
+  const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Market' });
   const { system, calls } = fakeSystem({ stage: 'dry-run', clicked: false });
   const { client, hits } = fakeHttp({});
   const { result } = await publishAs(system, client, session, target, { dryRun: true, versions: client });
   assert.equal(calls[0]!.dryRun, true); assert.equal(result.published, false); assert.equal(result.verification.state, 'skipped'); assert.deepEqual(hits, []);
 });
 test('a UI failure before the click is an error that says nothing was published', async () => {
-  const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Trade' });
+  const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Market' });
   const { system } = fakeSystem({ ok: false, stage: 'choose-group', clicked: false, message: 'Group not found' });
   const { client } = fakeHttp({ [versionsUrl]: [version(4)] });
   await assert.rejects(publishAs(system, client, session, target, { versions: client }), (e: AppError) => e.code === 'STUDIO_UI_ERROR' && /choose-group before publishing/.test(e.message));
 });
 test('after the click, the API decides: a new version wins over a UI read failure, none is an unknown-state error', async () => {
-  const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Trade' });
+  const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Market' });
   const failed = fakeSystem({ ok: false, stage: 'publish', clicked: true, message: 'Timed out waiting for publish result.' });
   const won = fakeHttp({ [versionsUrl]: [version(4), version(5)] });
   const { result, warnings } = await publishAs(failed.system, won.client, session, target, { versions: won.client, pollMs: 1000 });
@@ -117,7 +117,7 @@ test('after the click, the API decides: a new version wins over a UI read failur
     (e: AppError) => e.code === 'STUDIO_UI_ERROR' && /result is unknown/.test(e.message));
 });
 test('UI success without API confirmation is partial, and a new place is found by its new ID', async () => {
-  const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Trade' });
+  const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Market' });
   const stale = fakeHttp({ [versionsUrl]: [version(4)] });
   const r1 = await publishAs(fakeSystem({}).system, stale.client, session, target, { versions: stale.client, pollMs: 1000, verifyTimeoutMs: 3000 });
   assert.equal(r1.result.verification.state, 'unverified'); assert.equal(r1.warnings[0]?.code, 'PUBLISH_UNVERIFIED');
@@ -126,7 +126,7 @@ test('UI success without API confirmation is partial, and a new place is found b
   const fresh = planPublishTarget(games[0]!, games, places, ME, { newPlace: true }).target;
   const dir = 'https://develop.roblox.com/v1/universes/7/places?limit=100';
   const row = (id: number, name: string) => ({ id, universeId: 7, name });
-  const listing = fakeHttp({ [dir]: [{ data: places.map(p => row(Number(p.placeId), p.name)), nextPageCursor: null }, { data: [...places.map(p => row(Number(p.placeId), p.name)), row(103, 'Ball Dev')], nextPageCursor: null }] });
+  const listing = fakeHttp({ [dir]: [{ data: places.map(p => row(Number(p.placeId), p.name)), nextPageCursor: null }, { data: [...places.map(p => row(Number(p.placeId), p.name)), row(103, 'Example Development')], nextPageCursor: null }] });
   const r2 = await publishAs(fakeSystem({ button: 'Create' }).system, listing.client, session, fresh, { pollMs: 1000 });
   assert.deepEqual(r2.result.verification, { state: 'verified', newPlaceId: '103' }); assert.deepEqual(r2.warnings, []);
 });

@@ -85,8 +85,8 @@ test('list fails on a failed page or a repeated token instead of returning a par
 });
 
 test('table parser accepts { en, zh, price } rows and rejects bad tables', () => {
-  assert.deepEqual(parseDeveloperProductSource('-- header\nreturn {\n\t{ en = "Keep Streak", zh = "保持连胜", price = 19 },\n\t{ price = 49; en = "Starter Pack", zh = "" };\n}\n'),
-    [{ en: 'Keep Streak', zh: '保持连胜', price: 19 }, { en: 'Starter Pack', zh: '', price: 49 }]);
+  assert.deepEqual(parseDeveloperProductSource('-- header\nreturn {\n\t{ en = "Example Boost", zh = "示例加成", price = 19 },\n\t{ price = 49; en = "Example Refill", zh = "" };\n}\n'),
+    [{ en: 'Example Boost', zh: '示例加成', price: 19 }, { en: 'Example Refill', zh: '', price: 49 }]);
   for (const bad of [
     'return { { en = "A", zh = "甲", price = 1 }, { en = "A", zh = "乙", price = 2 } }',
     'return { { en = "", zh = "甲", price = 1 } }', 'return { { en = " A", zh = "甲", price = 1 } }',
