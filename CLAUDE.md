@@ -16,7 +16,8 @@
 
 - 离线测试与虚构响应样例：`tests/`、`tests/fixtures/`。
 - 真实 API 冒烟测试：`scripts/live-smoke.ts`。
-- 使用文档与 CI：`README.md`、`.github/workflows/ci.yml`。
+- 命令示例、权限、JSON 输出、退出码与备份恢复见 [命令参考](docs/cli-reference.md)。项目概览见 [README](README.md)。
+- CI：`.github/workflows/ci.yml`。
 
 ## DataStore
 
@@ -69,26 +70,26 @@
 
 - 历史版本与 ProfileService 摘要模块：`src/datastores/entries.ts`、`src/profiles/history.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
-- 离线验证：`tests/datastores.test.ts`、`tests/profile-history.test.ts`；使用文档：`README.md`。
+- 离线验证：`tests/datastores.test.ts`、`tests/profile-history.test.ts`。
 
 ## 玩家封禁
 
 - 封禁与解封模块：`src/moderation/restrictions.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
-- 离线验证：`tests/restrictions.test.ts`；使用文档：`README.md`。
+- 离线验证：`tests/restrictions.test.ts`。
 
 ## 玩家清单
 
 - 玩家清单与查找模块：`src/players/catalog.ts`；玩家解析接入：`src/profiles/copy.ts`。
 - 本地存储：`src/storage/store.ts`；数据：应用数据目录下的 `players.json`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
-- 离线验证：`tests/players.test.ts`；使用文档：`README.md`。
+- 离线验证：`tests/players.test.ts`。
 
 ## 群组角色管理
 
 - 角色查询、成员查询与批量添加/移除模块：`src/groups/roles.ts`。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
-- 离线验证：`tests/groups.test.ts`；使用文档：`README.md`。
+- 离线验证：`tests/groups.test.ts`。
 
 ## 游戏标题与简介本地化
 
@@ -97,7 +98,7 @@
 - 源语言标题／简介由 `localization write` 自动定位 Universe 的 `rootPlace`，通过 Cloud Update Place 修改；不要直接 PATCH Universe 的 `displayName`。其他语言继续走本地化接口。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/localization.test.ts`；真实只读验证：`scripts/localization-smoke.ts`。
-- 本地备份：应用数据目录下的 `localization-backups/`；使用文档：`README.md`。
+- 本地备份：应用数据目录下的 `localization-backups/`。
 
 ## 倒计时诊断日志
 
@@ -124,7 +125,7 @@
 - 重启模块：`src/universes/restart.ts`；命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - `servers restart --universe <ID>` 默认立即重启所有活跃 Place 的旧服。`--all` 纳入当前版本，`--countdown` 由 Roblox 延迟一分钟。
 - `servers status --universe <ID>` 通过只读重启影响预估接口汇总活跃服务器和预计受影响的旧服。
-- 离线验证：`tests/server-restart.test.ts`；使用文档：`README.md`。
+- 离线验证：`tests/server-restart.test.ts`。
 
 ## 游戏内本地化表
 
