@@ -23,6 +23,11 @@ rbx --help
 rbx auth set
 rbx auth status
 rbx auth clear
+rbx auth permissions
+rbx auth permissions --for devproduct-sync
+rbx auth check
+rbx auth check --for devproduct-sync --universe 123456
+rbx auth check --for profile-clear --universe 123456 --datastore Default
 ```
 
 `auth set` 隐藏输入，联网验证后保存。Windows 使用当前 OS 用户的 DPAPI 加密，明文不会写入工具配置。`auth clear` 删除保存的凭证，保留目录缓存。
@@ -31,10 +36,32 @@ rbx auth clear
 
 环境变量 `ROBLOX_API_KEY` 优先于保存的凭证，可供 CI、临时测试以及 macOS/Linux 使用。第一版 macOS/Linux 尚未实现持久凭证存储，需使用该环境变量。不要通过命令行参数直接传入密钥。
 
+### 权限清单与 Key 配置检查
+
+`auth permissions` 完全离线，不需要 Key；按功能列出 API 系统说明、精确 scope、操作和资源范围。`--for <feature>` 只显示一个功能；不带筛选时输出全部稳定功能标识及对应命令。API 系统名称为说明性分组，Roblox Dashboard 的显示名称可能不同。不要为了某一项功能直接授予清单中的全部权限。
+
+`auth check` 读取当前生效的 Key，仅调用官方 `POST https://apis.roblox.com/api-keys/v1/introspect` 检查配置，不执行任何业务写操作，也不修改本地凭证或目录。环境变量仍优先于本地 DPAPI。默认按全部功能汇总；推荐指定 `--for`，并为游戏相关功能提供 `--universe <ID或本地目录精确名称>`。DataStore 功能支持 `--datastore <精确名称>`，此参数必须与 `--universe` 一起使用。
+
+结果按每个操作的授权分别匹配，区分：
+
+- `configured`：所需操作已配置，且此项可识别的资源范围覆盖指定目标；不代表真实业务调用已验证成功。
+- `missing`：缺少 scope 或对应操作。
+- `out-of-scope`：操作存在，但返回的游戏或 DataStore 范围未覆盖目标。
+- `unknown`：缺少目标、DataStore 范围信息不全，或需要核实素材所属用户／群组，无法确认资源范围。
+
+Universe 范围支持 `*`；按 Roblox 用户 Key 规则，未设置游戏范围表示不限制游戏。DataStore 限制按同一条 `{ universeId, datastoreName }` 匹配，不能把不同游戏的授权拼接使用；单条范围中省略可选的 `datastoreName` 表示该游戏下全部 DataStore，完全未返回 `universeDatastores` 时不假定全部可访问。素材 Owner 范围保留为 `unknown`。账号、群组角色、素材访问权及接口其他限制仍由 Roblox 校验，检查不会读取玩家实际存档来验证。
+
+复制功能的 `datastore-copy` / `profile-copy` 检查目标游戏的 read/create/update；源游戏单独用 `--for datastore-get` 检查 read。权限清单的注释说明 `--with-values`、源语言修改和旧文件夹图标模式等条件差异；较宽的功能预设不等同于每个子选项的最小权限。
+
+两个命令都支持全局 `--json` 和统一 `{ schemaVersion, status, data, warnings }` 信封。`auth check` 的 `data` 包含 `userId`、`enabled`、`expired`、`keyState`、`source`、`configurationState`、目标与逐功能／逐权限结果，以及始终为 `false` 的 `businessAccessVerified`；不输出 Key。已配置且可识别的范围全部通过时退出 0；缺权限、范围不匹配或范围未确认时退出 3；Key 禁用／过期或无凭证时退出 4；Roblox 拒绝检查时退出 5。禁用／过期的结构化回执仍保留诊断结果（`status: partial`）；无法取得回执时使用统一错误信封。未知功能和无效参数退出 2。
+
+SDK：`permissionFeatures(featureId?)`、`checkKeyPermissions(identity, options?)`、`RobloxApi.inspectKey()`。`inspectKey()` 保留资源范围并返回禁用／过期状态；现有 `identity()` 继续拒绝禁用／过期 Key。离线验证：`tests/auth-permissions.test.ts`。参考：[Key 检查接口](https://create.roblox.com/docs/cloud/auth/api-keys)、[Roblox 权限说明](https://create.roblox.com/docs/cloud/reference/scopes)。
+
 扫描与游戏权限查询需要：
 
 - `legacy-group:manage`：可管理群组查询。
 - `legacy-universe:manage`：Universe 管理权限查询。
+- `universe:read`：Cloud Universe 元数据读取。
 
 这些名称来自 Roblox 官方接口定义。虽命名为 manage，游戏目录命令调用的相关接口都是只读查询。DataStore 命令另需相应的读取、创建或更新权限。API Key 的 scope 和账号的实际游戏权限是两层约束。
 
@@ -247,7 +274,7 @@ rbx --json profile history 123456789 --player 12345 --limit 25
 
 普通输出逐版本显示时间、货币、经验、物品数和 RPS 战绩，并列出去重后的 `fusion` 流水。JSON 输出保留版本 ID、数据摘要、合成事件 ID、时间、被消耗实例 ID、生成实例 ID及结果物品 ID，便于结合游戏配置表审计具体品质和显示名称。
 
-API Key 需要 `universe-datastores.versions:list` 和 `universe-datastores.versions:read` 权限。历史版本由 Roblox 保留策略决定；未出现在接口结果中的旧版本无法由本命令恢复。模块：`src/profiles/history.ts`、`src/datastores/entries.ts`；离线验证：`tests/profile-history.test.ts`、`tests/datastores.test.ts`。
+API Key 需要 `universe-datastores.versions:list` 和 `universe-datastores.objects:read` 权限（版本列表使用旧接口，版本内容实际通过 Cloud v2 entry 读取）。历史版本由 Roblox 保留策略决定；未出现在接口结果中的旧版本无法由本命令恢复。模块：`src/profiles/history.ts`、`src/datastores/entries.ts`；离线验证：`tests/profile-history.test.ts`、`tests/datastores.test.ts`。
 
 ## 玩家清档
 

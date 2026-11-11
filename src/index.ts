@@ -29,6 +29,8 @@ export { LocalStore, defaultHome } from './storage/store.js';
 export { PlayerCatalogService, findPlayers, selectPlayer } from './players/catalog.js';
 export type { SavedPlayer, PlayerCatalog } from './players/catalog.js';
 export { CredentialStore } from './auth/credentials.js';
+export { permissionFeatures, checkKeyPermissions } from './auth/permissions.js';
+export type { PermissionTarget, PermissionRequirement, PermissionFeature, PermissionCheckOptions, PermissionState, PermissionCheckRow, FeaturePermissionCheck } from './auth/permissions.js';
 export { AppError } from './core/errors.js';
 export { DataStoreEntries } from './datastores/entries.js';
 export type { EntryAddress, EntrySnapshot, EntryVersion, EntryRevision } from './datastores/entries.js';

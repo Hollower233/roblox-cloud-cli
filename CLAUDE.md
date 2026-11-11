@@ -19,6 +19,13 @@
 - 命令示例、权限、JSON 输出、退出码与备份恢复见 [命令参考](docs/cli-reference.md)。项目概览见 [README](README.md)。
 - CI：`.github/workflows/ci.yml`。
 
+## API Key 权限诊断
+
+- 功能权限清单与差异检查：`src/auth/permissions.ts`；完整 Key 检查：`RobloxApi.inspectKey()`，保留资源范围且不拒绝禁用／过期状态；`identity()` 继续拒绝无效状态。
+- CLI：`src/cli/commands/auth-permissions.ts`，命令 `auth permissions/check [--for <feature>]`；check 支持 `--universe <id-or-name>`、`--datastore <name>`；SDK：`permissionFeatures`、`checkKeyPermissions`。
+- 清单离线；check 仅 introspect、不执行业务写操作，不把资源未知或配置通过视为真实业务访问已验证。退出码：0 配置通过，3 缺失／范围不匹配／未确认，4 Key 禁用或过期／无凭证，5 检查被拒绝。
+- 离线验证：`tests/auth-permissions.test.ts`，虚构响应 `tests/fixtures/key-introspection.mjs`。新增 API 功能时同步维护权限清单。
+
 ## DataStore
 
 - 单条数据读取与跨游戏复制：`src/datastores/entries.ts`。

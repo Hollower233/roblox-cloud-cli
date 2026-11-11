@@ -12,9 +12,25 @@ function bool(x: unknown): boolean { if (typeof x !== 'boolean') throw new AppEr
 function apiId(x: unknown): string { try { return id(String(x)); } catch { throw new AppError('INVALID_RESPONSE', 'Invalid Roblox ID.'); } }
 export class RobloxApi implements RobloxGateway {
   constructor(private http: HttpClient, private apiKey: string) {}
-  async identity(): Promise<Identity> {
+  /** Inspect configuration, including inactive keys; never returns the secret. */
+  async inspectKey(): Promise<Identity> {
     const d = object(await this.http.request('https://apis.roblox.com/api-keys/v1/introspect', { body: { apiKey: this.apiKey } }));
-    const result = { userId: apiId(d.authorizedUserId), enabled: bool(d.enabled), expired: bool(d.expired), scopes: array(d.scopes).map(s => { const v = object(s); return { name: text(v.name), operations: array(v.operations).map(text) }; }) };
+    return { userId: apiId(d.authorizedUserId), enabled: bool(d.enabled), expired: bool(d.expired), scopes: array(d.scopes).map(s => {
+      const v = object(s);
+      const resources: Pick<Identity['scopes'][number], 'universeIds' | 'userIds' | 'groupIds' | 'universeDatastores'> = {};
+      for (const field of ['universeIds', 'userIds', 'groupIds'] as const) {
+        if (v[field] !== undefined) resources[field] = array(v[field]).map(value => value === '*' ? '*' : apiId(value));
+      }
+      if (v.universeDatastores !== undefined) resources.universeDatastores = array(v.universeDatastores).map(value => {
+        const entry = object(value);
+        // DataStore is an optional target part: Roblox omits its name when unrestricted.
+        return { universeId: entry.universeId === '*' ? '*' : apiId(entry.universeId), datastoreName: entry.datastoreName === undefined ? '*' : text(entry.datastoreName) };
+      });
+      return { name: text(v.name), operations: array(v.operations).map(text), ...resources };
+    }) };
+  }
+  async identity(): Promise<Identity> {
+    const result = await this.inspectKey();
     if (!result.enabled || result.expired) throw new AppError('AUTH_INVALID', 'The API key is disabled or expired.');
     return result;
   }

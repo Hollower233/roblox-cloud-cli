@@ -27,6 +27,6 @@ npm link
 rbx --help
 ```
 
-在 Windows 上可用 `rbx auth set` 保存 Roblox Open Cloud API Key。也可以在任意平台设置 `ROBLOX_API_KEY` 环境变量。配置后用 `rbx universe scan` 建立游戏目录，再运行 `rbx universe list` 查看。
+在 Windows 上可用 `rbx auth set` 保存 Roblox Open Cloud API Key。也可以在任意平台设置 `ROBLOX_API_KEY` 环境变量。配置前运行 `rbx auth permissions` 查看各功能所需权限；配置后用 `rbx auth check --for devproduct-sync --universe <ID>` 检查缺失权限和游戏范围（DataStore 检查可加 `--datastore <名称>`）。此检查不执行业务写操作，也不证明账号实际访问权。配置后用 `rbx universe scan` 建立游戏目录，再运行 `rbx universe list` 查看。
 
 [📚 命令参考](docs/cli-reference.md)

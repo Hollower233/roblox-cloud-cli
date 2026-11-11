@@ -1,5 +1,10 @@
 export interface Owner { id: string; name: string; type: 'User' | 'Group' }
-export interface Identity { userId: string; enabled: boolean; expired: boolean; scopes: { name: string; operations: string[] }[] }
+export interface KeyScope {
+  name: string; operations: string[];
+  universeIds?: string[]; userIds?: string[]; groupIds?: string[];
+  universeDatastores?: { universeId: string; datastoreName: string }[];
+}
+export interface Identity { userId: string; enabled: boolean; expired: boolean; scopes: KeyScope[] }
 export interface Group { id: string; name: string }
 export interface DiscoveredGame { id: string; name: string }
 export interface Page { games: DiscoveredGame[]; cursor: string | null }

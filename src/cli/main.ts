@@ -2,6 +2,7 @@
 import { Command, CommanderError } from 'commander';
 import { commandContext } from './context.js';
 import { registerConfigs } from './commands/configs.js';
+import { registerAuthPermissions } from './commands/auth-permissions.js';
 import { registerPlaces } from './commands/places.js';
 import { registerDeveloperProducts } from './commands/devproducts.js';
 import { registerExperiments } from './commands/experiments.js';
@@ -150,6 +151,7 @@ localization.command('write <universe>').description('Write selected game-info f
   });
 
 const auth = program.command('auth').description('Configure and validate API credentials');
+registerAuthPermissions(auth, { store, json, signal: abort.signal });
 auth.command('set').description('Validate and securely save a key (Windows DPAPI)')
   .option('--key-file <path>', 'Read an existing local key file instead of prompting')
   .action(async options => {
