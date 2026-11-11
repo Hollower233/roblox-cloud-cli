@@ -153,6 +153,8 @@
 
 ## 开发者产品同步
 
+- 单产品默认图标上传：`src/devproducts/icon.ts`，命令 `devproduct icon <游戏> <productId> --image <path> [--dry-run]`，SDK `uploadDeveloperProductIcon`。PNG/JPEG 等比缩小至 512×512 内，保留透明度；PATCH 只发 `imageFile`，写前备份配置与上传 PNG，写后回读图标 ID，最多 5 次，只读重试。`verified` 仅表示图标引用变更，不代表审核通过；未确认退出码 3。权限 `developer-product:read/write`；离线 `tests/devproduct-icon.test.ts`。
+
 - 接口、表解析、分页：`src/devproducts/products.ts`；diff 计划、确认码、执行与备份：`src/devproducts/sync.ts`；通用行解析 `parseRecordRows`：`src/localization/lua-table.ts`。
 - CLI：`src/cli/commands/devproducts.ts`，命令 `devproduct list <游戏>`、`devproduct sync <游戏...> --source <rbxm> [--confirm <token>]`；SDK 导出：`src/index.ts`。
 - 来源为 Studio `项目文档/开发者产品` 的 `{ en, zh, price }` 行，单向推送；按 en 匹配改价，匹配不上先复用表外商品（ProductId 升序）再新建；重名或列表拉不全则拒绝该宇宙。

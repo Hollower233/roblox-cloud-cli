@@ -74,10 +74,15 @@ export async function getDeveloperProduct(http: HttpClient, universeId: string, 
   return parseProduct(await http.request(`${base(universeId)}/${id(productId)}/creator`, { auth: true }), universeId);
 }
 
-export interface ProductFields { name?: string; description?: string; price?: number; isForSale?: boolean; isRegionalPricingEnabled?: boolean }
+export interface ProductFields { name?: string; description?: string; price?: number; isForSale?: boolean; isRegionalPricingEnabled?: boolean; imageFile?: Blob }
 function form(fields: ProductFields): FormData {
   const data = new FormData();
-  for (const [key, value] of Object.entries(fields)) if (value !== undefined) data.append(key, String(value));
+  for (const [key, value] of Object.entries(fields)) if (value !== undefined) {
+    if (key === 'imageFile') {
+      if (!(value instanceof Blob)) throw new AppError('ARGUMENT_ERROR', 'imageFile must be a Blob.');
+      data.append(key, value, 'icon.png');
+    } else data.append(key, String(value));
+  }
   return data;
 }
 

@@ -64,6 +64,8 @@ export { latestPlaceVersion, normalizeLabel, pickSession, placeEntries, planPubl
 export type { PlaceEntry, PlaceVersion, PublishAsOptions, PublishAsResult, PublishAsSystem, PublishTarget, PublishUiArgs, PublishUiResult, PublishVerification } from './studio/publish-as.js';
 export { DEVPRODUCT_TABLE_NAME, compareIds, createDeveloperProduct, getDeveloperProduct, listDeveloperProducts, loadDeveloperProductTable, parseDeveloperProductSource, parseDeveloperProductTable, updateDeveloperProduct } from './devproducts/products.js';
 export type { DeveloperProduct, DeveloperProductRow, ProductFields } from './devproducts/products.js';
+export { uploadDeveloperProductIcon } from './devproducts/icon.js';
+export type { DeveloperProductIconOptions } from './devproducts/icon.js';
 export { CONFIRM_INSTRUCTION, READBACK_DELAYS_MS, STALE_INSTRUCTION, planToken, planUniverse, syncDeveloperProducts, syncWarnings } from './devproducts/sync.js';
 export type { ActionResult, ActionState, PlannedAction, DeveloperProductSyncOptions, DeveloperProductSyncResult, UniversePlan, UniverseResult } from './devproducts/sync.js';
 export { parseRecordRows } from './localization/lua-table.js';

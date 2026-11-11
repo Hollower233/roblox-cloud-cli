@@ -727,6 +727,8 @@ return {
 
 ```sh
 rbx devproduct list "Example Development"
+rbx devproduct icon "Example Development" 123456789 --image ./coin-boost.png --dry-run
+rbx devproduct icon "Example Development" 123456789 --image ./coin-boost.png
 rbx devproduct sync "Example Development" "Example Test" --source ./开发者产品.rbxm
 rbx devproduct sync "Example Development" "Example Test" --source ./开发者产品.rbxm --confirm "<confirmToken>"
 ```
@@ -745,7 +747,11 @@ rbx devproduct sync "Example Development" "Example Test" --source ./开发者产
 
 写入前把该宇宙全部商品与计划动作备份到应用数据目录 `devproduct-backups/`（失败则不写该宇宙）；每次写入后读取单个商品核对名称、价格与在售状态；该读取是最终一致的（实测约 2 秒内会在新旧值间跳动，新建商品可能短暂 404），不一致时按 1/2/3/5 秒间隔重读，最多 5 次，结果中 `readbacks` 为读取次数；地区定价不参与核对。写入不自动重试；`failed` 为明确拒绝，`unverified` 为响应丢失或回读不符，先 `devproduct list` 核对再决定是否重跑（重跑前要确认 create 是否已生效，避免重名）。列表同样可能滞后，刚新建后立即重跑 sync 可能看不到新商品而再次新建，新建后请间隔片刻再重跑。存在失败、未确认或被拒绝的宇宙时状态为 `partial`、退出码 3。
 
-API Key 需目标宇宙的 `developer-product:read`（list/sync）与 `developer-product:write`（sync 写入）。接口：[Developer Products (Beta)](https://create.roblox.com/docs/cloud/reference/features/developer-products)。SDK：`listDeveloperProducts`、`planUniverse`、`syncDeveloperProducts`、`loadDeveloperProductTable`。
+API Key 需目标宇宙的 `developer-product:read`（list/sync/icon）与 `developer-product:write`（sync/icon 写入）。接口：[Developer Products (Beta)](https://create.roblox.com/docs/cloud/reference/features/developer-products)。SDK：`listDeveloperProducts`、`planUniverse`、`syncDeveloperProducts`、`loadDeveloperProductTable`、`uploadDeveloperProductIcon`。
+
+`devproduct icon <game> <productId> --image <path>` 更新单个产品的默认图标。接受静态 PNG/JPEG（本地限制 20 MiB、4000 万像素），自动校正方向并等比缩小至 512×512 内，不裁剪，保留透明度，转 PNG 后用 multipart `imageFile` 上传。只发送图标字段。`--dry-run` 校验图片并读取产品，不上传或生成备份。正式上传前保存原产品配置（含旧图标 ID）及本次上传的 PNG 到 `devproduct-backups/`；这些记录不是旧图标原文件，也不提供一键恢复。不可修改的商品直接拒绝。SDK 的 `ProductFields.imageFile` 接受 Blob，可供底层创建/更新接口直接使用；底层接口不做图片规范化和备份。
+
+上传只提交一次，随后最多回读 5 次（间隔 0/1/2/3/5 秒）。观察到非空且变化的 `iconImageAssetId` 时返回 `verified`，仅表示图标引用已更新，不代表图片审核已通过；未观察到变化或上传响应丢失返回 `unverified`、退出码 3，先用 `devproduct list <game> --json` 检查，避免盲目重复上传。默认离线验证：`tests/devproduct-icon.test.ts`。
 
 离线测试：`tests/devproducts.test.ts`。显式真实写测试：
 

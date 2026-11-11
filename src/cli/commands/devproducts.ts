@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { uploadDeveloperProductIcon } from '../../devproducts/icon.js';
 import { join } from 'node:path';
 import { listDeveloperProducts, loadDeveloperProductTable, type DeveloperProduct } from '../../devproducts/products.js';
 import { CONFIRM_INSTRUCTION, STALE_INSTRUCTION, syncDeveloperProducts, syncWarnings, type DeveloperProductSyncResult, type UniverseResult } from '../../devproducts/sync.js';
@@ -47,6 +48,16 @@ export function renderSync(result: DeveloperProductSyncResult): string {
 export function registerDeveloperProducts(program: Command, context: CommandContext): void {
   const json = () => Boolean(program.opts().json);
   const root = program.command('devproduct').description('List developer products and sync the Studio developer product table to universes');
+
+  root.command('icon <game> <productId>').description('Upload a default product icon (PNG/JPEG; fits within 512x512)')
+    .requiredOption('--image <path>', 'Local image file')
+    .option('--dry-run', 'Validate image and product without uploading')
+    .action(async (input: string, productId: string, options: { image: string; dryRun?: boolean }) => {
+      const { universeId, http, local } = await context.universe(input);
+      context.receipt(await uploadDeveloperProductIcon(http, universeId, productId, options.image, {
+        dryRun: options.dryRun, backupDirectory: join(local.home, 'devproduct-backups'),
+      }));
+    });
 
   root.command('list <game>').description('List every developer product of a universe (read-only; pages to the end)')
     .action(async (input: string) => {
