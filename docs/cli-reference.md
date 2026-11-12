@@ -714,6 +714,24 @@ rbx studio publish-as --to "Example Sandbox" --new --pid "<EditorPid>" --json
 - 限制：Studio 必须是英文界面且不能最小化；不移动真实鼠标，但展开菜单会把 Studio 短暂拉到前台、对话框会在屏幕上显示约 10 秒，期间操作电脑可能导致失败。个人私密游戏不在目录中，同名冲突只能在界面上发现。
 - 离线验证：`tests/studio-publish-as.test.ts`。
 
+## Studio 带版本备注保存（Windows）
+
+把本机已打开的 Studio 编辑会话通过 File > Save to Roblox with Notes 保存到**当前 Place**，并填写版本标题与详情。只保存版本，不发布上线。Publish As 对话框没有备注栏，需要备注时先用本命令保存。
+
+```powershell
+rbx studio save --title "v1.2.3 修复结算" --details "修复结算界面`n调整掉落" --dry-run --json
+rbx studio save --title "v1.2.3 修复结算" --details "第一行\n第二行" --pid "<EditorPid>" --json
+```
+
+- `--title` 必填，单行；`--details` 可选，真实换行或字面量 `\n` 都按换行输入。拒绝 Tab 及其他控制字符（后台按键会移动焦点或关闭对话框）。
+- `--pid`：多个会话时必填。`--dry-run` 填好标题和详情、确认 Save 可用后点 Cancel，不保存。`--debug-dir` 保存每一步截图。
+- 界面脚本：`src/studio/save-notes.ps1`，共享 `src/studio/studio-ui.ps1`。打开对话框依次尝试 UIA 调用菜单项、键盘 + OCR 导航菜单、前台按 `Ctrl+Alt+S`（会短暂抢焦点，结束后交还）。菜单项置灰（如 Play Test 中）直接报错，不再尝试。
+- 对话框是引擎渲染的插件窗口，UIA 看不到输入框：按 OCR 识别的标签版面定位字段，后台点击并逐字输入；输入前要求两个字段为空（显示占位文字），输入后回读，Save 按钮按亮蓝色像素识别（禁用时为暗蓝）。已打开的同名对话框会先关闭，其中未保存的文字丢弃。
+- 不做线上回读、不需要 API Key：点击 Save 后对话框关闭即视为成功。点击 Save 前的失败一定未保存；点击后对话框未关闭报 `STUDIO_UI_ERROR`，状态未知，先查版本历史再重试。输出中的 `titleOcr` / `detailsOcr` 只是诊断信息。
+- Team Create 下备注会挂到当前最新的已有版本上，不一定立即产生新版本号。
+- 本地账本：每次成功保存追加到应用数据目录 `place-versions/<PlaceId>.jsonl`，记录时间、Place、标题与详情；dry-run 不写。
+- 离线验证：`tests/studio-save-notes.test.ts`。真实界面只用 `--dry-run` 验证，真实保存需用户明确要求。
+
 ## Place 服务器人数上限
 
 一个 Universe 可以包含多个 Place，人数上限按 Place 分别设置。`--universe` 接受 Universe ID 或本地游戏目录中的精确名称。

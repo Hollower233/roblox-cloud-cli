@@ -152,11 +152,19 @@
 
 ## Studio Publish As
 
-- 目标解析、查重、发布编排与版本复核：`src/studio/publish-as.ts`；界面自动化脚本：`src/studio/publish-as.ps1`（仅 ASCII，参数为 base64 JSON，stdout 输出一行 `@@RESULT {json}`，进度写 stderr），构建时复制到 `dist/studio/`。
+- 目标解析、查重、发布编排与版本复核：`src/studio/publish-as.ts`；界面自动化脚本：`src/studio/publish-as.ps1`，共享助手 `src/studio/studio-ui.ps1`，运行器 `src/studio/ui-script.ts`（脚本均仅 ASCII，参数为 base64 JSON，stdout 输出一行 `@@RESULT {json}`，进度写 stderr），构建时复制全部 `.ps1` 到 `dist/studio/`。
 - 命令 `studio publish-as --to <game> (--place <place> | --new) [--pid] [--dry-run] [--debug-dir]`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅 Windows、英文 Studio 界面。
 - 脚本注意：PowerShell 变量名不区分大小写，新增变量不得与已有变量（含 `$script:` 作用域）同名。
 - 复核：覆盖用 Assets API 版本号（`asset:read`），新建用 Place 目录新增 ID；点击按钮前失败必未发布。
 - 离线验证：`tests/studio-publish-as.test.ts`；真实界面只用 `--dry-run` 验证，真实发布需用户明确要求。
+
+## Studio 带版本备注保存
+
+- 编排、校验与本地账本：`src/studio/save-notes.ts`；界面脚本：`src/studio/save-notes.ps1`（共享 `studio-ui.ps1`）。
+- 命令 `studio save --title <t> [--details <d>] [--pid] [--dry-run] [--debug-dir]`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅保存到当前 Place、不发布；仅 Windows、英文 Studio 界面。
+- 打开顺序：UIA Invoke 菜单项 → 键盘+OCR 菜单 → 前台 `Ctrl+Alt+S`；菜单项置灰（Play Test 中）直接失败。字段按 OCR 标签版面定位，Save 按亮蓝像素识别。
+- 不做线上回读、不需要 API Key：Save 后对话框关闭即成功；Team Create 下备注挂到当前最新版本。账本：应用数据目录 `place-versions/<PlaceId>.jsonl`。
+- 离线验证：`tests/studio-save-notes.test.ts`；真实界面只用 `--dry-run` 验证，真实保存需用户明确要求。
 
 ## 开发者产品同步
 

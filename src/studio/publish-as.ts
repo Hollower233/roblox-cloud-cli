@@ -1,10 +1,8 @@
-import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { AppError, id } from '../core/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
 import type { Game, Warning } from '../universes/models.js';
 import type { StudioProcess } from './launch.js';
+import { bundledStudioScript, runStudioUiScript } from './ui-script.js';
 
 /** Label the Publish dialog's owner dropdown shows for games owned by the signed-in user. */
 export const PERSONAL_OWNER_LABEL = 'My Experiences';
@@ -218,49 +216,32 @@ async function verify(system: PublishAsSystem, http: HttpClient, target: Publish
     }
   }
   if (!options.versions || before === undefined) return { state: 'unverified', message: 'Place versions are unavailable (needs an API key with asset:read).' };
+  return waitForNewPlaceVersion(system, options.versions, target.place!.placeId, before, { timeoutMs: timeout, pollMs: poll });
+}
+
+/** Poll the Assets API until the place has a version newer than `before`; read-only, never retries a write. */
+export async function waitForNewPlaceVersion(clock: Pick<PublishAsSystem, 'sleep' | 'now'>, versions: HttpClient, placeId: string, before: PlaceVersion | null,
+  options: { timeoutMs?: number; pollMs?: number } = {}): Promise<PublishVerification> {
+  const timeout = options.timeoutMs ?? 30_000, poll = options.pollMs ?? 3_000, started = clock.now();
   for (;;) {
     try {
-      const now = await latestPlaceVersion(options.versions, target.place!.placeId);
+      const now = await latestPlaceVersion(versions, placeId);
       if (now && now.version > (before?.version ?? 0)) {
         return { state: 'verified', ...(before ? { before: before.version } : {}), after: now.version, createTime: now.createTime };
       }
     } catch { /* retry until timeout */ }
-    if (system.now() - started >= timeout) return { state: 'unverified', ...(before ? { before: before.version } : {}), message: 'No new place version appeared yet.' };
-    await system.sleep(poll);
+    if (clock.now() - started >= timeout) return { state: 'unverified', ...(before ? { before: before.version } : {}), message: 'No new place version appeared yet.' };
+    await clock.sleep(poll);
   }
 }
 
 /** Locate the bundled UI script next to this module (dist/studio or src/studio). */
-export function publishScriptPath(): string {
-  const path = fileURLToPath(new URL('./publish-as.ps1', import.meta.url));
-  if (!existsSync(path)) throw new AppError('STUDIO_NOT_FOUND', `Bundled publish-as.ps1 is missing: ${path}.`);
-  return path;
-}
+export function publishScriptPath(): string { return bundledStudioScript('publish-as.ps1'); }
 
 /** Real Windows implementation: runs the bundled PowerShell UI Automation / OCR script. */
 export function windowsPublishAsSystem(timeoutMs = 420_000): PublishAsSystem {
   return {
-    runUi(args, progress) {
-      const script = publishScriptPath();
-      const payload = Buffer.from(JSON.stringify(args), 'utf8').toString('base64');
-      return new Promise((resolvePromise, reject) => {
-        const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-ArgsB64', payload],
-          { windowsHide: true, maxBuffer: 16 * 1024 * 1024, timeout: timeoutMs, encoding: 'utf8' }, (error, stdout) => {
-            const line = stdout.split(/\r?\n/).reverse().find(l => l.startsWith('@@RESULT '));
-            if (line) {
-              try { resolvePromise(JSON.parse(line.slice(9)) as PublishUiResult); return; } catch { /* fall through */ }
-            }
-            reject(new AppError(error?.killed ? 'TIMEOUT' : 'STUDIO_UI_ERROR', error?.killed ? 'Publish As UI script timed out; the publish state is unknown.' : 'Publish As UI script ended without a result.'));
-          });
-        let buffer = '';
-        child.stderr?.setEncoding('utf8');
-        child.stderr?.on('data', (chunk: string) => {
-          buffer += chunk;
-          const lines = buffer.split(/\r?\n/); buffer = lines.pop() ?? '';
-          for (const l of lines) if (l.trim()) progress(l);
-        });
-      });
-    },
+    runUi: (args, progress) => runStudioUiScript<PublishUiResult>('publish-as.ps1', args, progress, timeoutMs, 'Publish As'),
     sleep: ms => new Promise(r => setTimeout(r, ms)),
     now: () => Date.now(),
   };

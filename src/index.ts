@@ -63,6 +63,8 @@ export type { TranslationJob, TranslationOutcome, Usage } from './translation/de
 export { closeStudio, findStudioExecutable, isReadyTitle, listStudioSessions, openStudio, parseStudioProcess, resolveStudioTarget, windowsStudioSystem } from './studio/launch.js';
 export type { CloseOptions, CloseResult, OpenOptions, OpenResult, StudioProcess, StudioSystem, StudioTarget } from './studio/launch.js';
 export { latestPlaceVersion, normalizeLabel, pickSession, placeEntries, planPublishTarget, publishAs, publishScriptPath, resolvePublishGame, searchTerm, windowsPublishAsSystem, PERSONAL_OWNER_LABEL } from './studio/publish-as.js';
+export { normalizeVersionNotes, saveNotesScriptPath, saveWithNotes, windowsSaveNotesSystem } from './studio/save-notes.js';
+export type { SaveNotesOptions, SaveNotesResult, SaveNotesSystem, SaveNotesUiArgs, SaveNotesUiResult, VersionNotes } from './studio/save-notes.js';
 export type { PlaceEntry, PlaceVersion, PublishAsOptions, PublishAsResult, PublishAsSystem, PublishTarget, PublishUiArgs, PublishUiResult, PublishVerification } from './studio/publish-as.js';
 export { DEVPRODUCT_TABLE_NAME, classifyDeveloperProductIcon, compareIds, createDeveloperProduct, getDeveloperProduct, listDeveloperProducts, loadDeveloperProductTable, parseDeveloperProductSource, parseDeveloperProductTable, updateDeveloperProduct } from './devproducts/products.js';
 export type { DeveloperProduct, DeveloperProductIconStatus, DeveloperProductRow, ProductFields } from './devproducts/products.js';

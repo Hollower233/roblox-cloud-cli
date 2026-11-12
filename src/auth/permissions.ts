@@ -66,7 +66,7 @@ const features: PermissionFeature[] = [
   feature('localization-write', '修改游戏标题和简介', ['localization write'], ['universe:read', 'legacy-universe:manage', 'universe.place:write'], ['仅修改其他语言时无需 universe.place:write；源语言通过根 Place 修改。']),
   feature('localization-table', '管理云端游戏内本地化表', ['localization enable', 'localization sync', 'localization import'], ['legacy-universe:manage'], ['本地 init/export/show 不需 Roblox 权限；DeepSeek 翻译另需独立 Key。']),
   feature('studio-publish-verify', '复核 Studio 覆盖发布版本', ['studio publish-as'], ['asset:read'], ['仅覆盖后的版本复核需要；此权限不会授权 Studio 发布。']),
-  feature('local', '本机及公开查询功能', ['auth permissions', 'universe list', 'player', 'cache clear', 'studio open', 'studio close', 'studio list', 'icon status', 'localization init', 'localization export', 'localization show'], [], ['本地缓存、玩家清单及 Studio 会话操作不需要 Roblox API Key。']),
+  feature('local', '本机及公开查询功能', ['auth permissions', 'universe list', 'player', 'cache clear', 'studio open', 'studio close', 'studio list', 'studio save', 'icon status', 'localization init', 'localization export', 'localization show'], [], ['本地缓存、玩家清单及 Studio 会话操作不需要 Roblox API Key。']),
 ];
 
 /** Returns independent copies so SDK consumers cannot mutate the built-in catalog. */
