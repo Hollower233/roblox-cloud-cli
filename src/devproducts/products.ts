@@ -6,10 +6,23 @@ import { parseRecordRows } from '../localization/lua-table.js';
 import { readRbxm } from '../localization/rbxm.js';
 import type { HttpClient } from '../transport/http-client.js';
 
+/** ID-based classification only; configured does not verify moderation or image display. */
+export type DeveloperProductIconStatus = 'missing' | 'placeholder' | 'configured';
+
+// Observed gray-cube icon, confirmed in Creator Hub; not an official exhaustive default-ID list.
+const KNOWN_PLACEHOLDER_ICON_IDS: ReadonlySet<string> = new Set(['88963008124478']);
+
+export function classifyDeveloperProductIcon(iconImageAssetId: string | null): DeveloperProductIconStatus {
+  if (iconImageAssetId === null || iconImageAssetId === '0' || iconImageAssetId === '') return 'missing';
+  return KNOWN_PLACEHOLDER_ICON_IDS.has(iconImageAssetId) ? 'placeholder' : 'configured';
+}
+
 /** One developer product as returned by Open Cloud (only the fields the CLI relies on). */
 export interface DeveloperProduct {
   productId: string; name: string; description: string; price: number | null;
   isForSale: boolean; isImmutable: boolean; regionalPricing: boolean; iconImageAssetId: string | null;
+  /** Derived from iconImageAssetId locally, without thumbnail requests. */
+  iconStatus: DeveloperProductIconStatus;
 }
 /** One row of the Studio table 项目文档/开发者产品. `en` is the Roblox product name and the match key. */
 export interface DeveloperProductRow { en: string; zh: string; price: number }
@@ -28,11 +41,11 @@ function parseProduct(value: unknown, universeId: string): DeveloperProduct {
   const pricing = data.priceInformation && typeof data.priceInformation === 'object' ? data.priceInformation as Record<string, unknown> : {};
   const price = typeof pricing.defaultPriceInRobux === 'number' && Number.isSafeInteger(pricing.defaultPriceInRobux) ? pricing.defaultPriceInRobux : null;
   const features = Array.isArray(pricing.enabledFeatures) ? pricing.enabledFeatures : [];
-  const icon = typeof data.iconImageAssetId === 'number' && data.iconImageAssetId > 0 ? String(data.iconImageAssetId) : null;
+  const icon = typeof data.iconImageAssetId === 'number' && Number.isSafeInteger(data.iconImageAssetId) && data.iconImageAssetId > 0 ? String(data.iconImageAssetId) : null;
   return {
     productId, name: data.name, description: typeof data.description === 'string' ? data.description : '', price,
     isForSale: data.isForSale === true, isImmutable: data.isImmutable === true,
-    regionalPricing: features.includes('RegionalPricing'), iconImageAssetId: icon,
+    regionalPricing: features.includes('RegionalPricing'), iconImageAssetId: icon, iconStatus: classifyDeveloperProductIcon(icon),
   };
 }
 

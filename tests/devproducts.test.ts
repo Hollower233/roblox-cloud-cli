@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import {
-  HttpClient, listDeveloperProducts, parseDeveloperProductSource, parseDeveloperProductTable, planUniverse,
+  HttpClient, classifyDeveloperProductIcon, createDeveloperProduct, getDeveloperProduct, listDeveloperProducts, parseDeveloperProductSource, parseDeveloperProductTable, planUniverse,
   syncDeveloperProducts, type DeveloperProduct, type DeveloperProductRow,
 } from '../src/index.js';
 import { writeRbxm } from '../src/localization/rbxm.js';
@@ -68,7 +68,36 @@ function cloud(initial: Fake[], hooks: { failPage?: number; repeatToken?: boolea
 }
 const rows = (...list: [string, number][]): DeveloperProductRow[] => list.map(([en, price]) => ({ en, zh: `${en}中文`, price }));
 const product = (productId: string, name: string, price: number, extra: Partial<DeveloperProduct> = {}): DeveloperProduct =>
-  ({ productId, name, description: '', price, isForSale: true, isImmutable: false, regionalPricing: false, iconImageAssetId: null, ...extra });
+  ({ productId, name, description: '', price, isForSale: true, isImmutable: false, regionalPricing: false, iconImageAssetId: null, iconStatus: 'missing', ...extra });
+
+test('SDK classifies known placeholder IDs without treating other IDs as verified images', () => {
+  for (const icon of [null, '', '0']) assert.equal(classifyDeveloperProductIcon(icon), 'missing');
+  assert.equal(classifyDeveloperProductIcon('88963008124478'), 'placeholder');
+  assert.equal(classifyDeveloperProductIcon('999'), 'configured');
+});
+
+test('list, get and create derive icon status locally while preserving nonzero IDs', async () => {
+  for (const [iconImageAssetId, expectedId, status] of [
+    [null, null, 'missing'], [0, null, 'missing'], [undefined, null, 'missing'],
+    [88963008124478, '88963008124478', 'placeholder'], [999, '999', 'configured'],
+  ] as const) {
+    const paths: string[] = [];
+    const row = { ...wire({ productId: 456, name: 'Example', price: 15, isForSale: true }), iconImageAssetId };
+    const http = new HttpClient({ apiKey: 'fictional-key', intervalMs: 0, fetch: async (input) => {
+      const url = new URL(String(input));
+      assert.equal(url.host, 'apis.roblox.com');
+      paths.push(url.pathname);
+      return Response.json(url.pathname.endsWith('/developer-products/creator') ? { developerProducts: [row], nextPageToken: '' } : row);
+    } });
+    const products = [
+      ...(await listDeveloperProducts(http, '123')),
+      await getDeveloperProduct(http, '123', '456'),
+      await createDeveloperProduct(http, '123', { name: 'Example' }),
+    ];
+    assert.deepEqual(products.map(p => [p.iconImageAssetId, p.iconStatus]), Array.from({ length: 3 }, () => [expectedId, status]));
+    assert.equal(paths.length, 3, 'classification adds no API requests');
+  }
+});
 
 test('list pages to the end, deduplicates and sorts by product ID', async () => {
   const many = Array.from({ length: 120 }, (_, i) => ({ productId: 1000 - i, name: `P${i}`, price: 10, isForSale: true }));
@@ -189,19 +218,28 @@ const preload = `globalThis.fetch = async (url, init) => {
   const u = new URL(url);
   if (u.pathname.endsWith('/creator')) return Response.json({ developerProducts: [
     { productId: 1, name: 'Old', description: '', iconImageAssetId: 0, universeId: 123, isForSale: true, isImmutable: false, priceInformation: { defaultPriceInRobux: 5, enabledFeatures: [] } },
-    { productId: 2, name: 'Dup', description: '', iconImageAssetId: 0, universeId: 123, isForSale: true, isImmutable: false, priceInformation: { defaultPriceInRobux: 5, enabledFeatures: [] } },
+    { productId: 2, name: 'Dup', description: '', iconImageAssetId: 88963008124478, universeId: 123, isForSale: true, isImmutable: false, priceInformation: { defaultPriceInRobux: 5, enabledFeatures: [] } },
+    { productId: 3, name: 'Configured', description: '', iconImageAssetId: 999, universeId: 123, isForSale: true, isImmutable: false, priceInformation: { defaultPriceInRobux: 5, enabledFeatures: [] } },
   ], nextPageToken: '' });
   throw new Error('unexpected ' + init.method + ' ' + u.pathname);
 };`;
-function cli(args: string[]) {
-  return spawnSync(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(preload)}`, resolve('dist/cli/main.js'), '--json', 'devproduct', ...args], {
+function cli(args: string[], json = true) {
+  return spawnSync(process.execPath, ['--import', `data:text/javascript,${encodeURIComponent(preload)}`, resolve('dist/cli/main.js'), ...(json ? ['--json'] : []), 'devproduct', ...args], {
     encoding: 'utf8', env: { ...process.env, ROBLOX_API_KEY: 'fictional-key' }, timeout: 10000,
   });
 }
 test('CLI list emits all products; sync with reuse exits 6 with confirm token and agent instruction', async () => {
   const listed = cli(['list', '123']);
   assert.equal(listed.status, 0, listed.stdout + listed.stderr);
-  assert.equal(JSON.parse(listed.stdout).data.count, 2);
+  assert.equal(JSON.parse(listed.stdout).data.count, 3);
+  assert.deepEqual(JSON.parse(listed.stdout).data.products.map((p: DeveloperProduct) => [p.iconImageAssetId, p.iconStatus]),
+    [[null, 'missing'], ['88963008124478', 'placeholder'], ['999', 'configured']]);
+  const human = cli(['list', '123'], false);
+  assert.equal(human.status, 0, human.stdout + human.stderr);
+  assert.match(human.stdout, /REGIONAL\tICON\tNAME/);
+  assert.match(human.stdout, /未配置\tOld/);
+  assert.match(human.stdout, /已知占位图\tDup/);
+  assert.match(human.stdout, /已配置（显示未验证）\tConfigured/);
   const dir = await mkdtemp(join(tmpdir(), 'rbx-dp-cli-'));
   try {
     const source = join(dir, '开发者产品.rbxm');

@@ -64,8 +64,8 @@ export { closeStudio, findStudioExecutable, isReadyTitle, listStudioSessions, op
 export type { CloseOptions, CloseResult, OpenOptions, OpenResult, StudioProcess, StudioSystem, StudioTarget } from './studio/launch.js';
 export { latestPlaceVersion, normalizeLabel, pickSession, placeEntries, planPublishTarget, publishAs, publishScriptPath, resolvePublishGame, searchTerm, windowsPublishAsSystem, PERSONAL_OWNER_LABEL } from './studio/publish-as.js';
 export type { PlaceEntry, PlaceVersion, PublishAsOptions, PublishAsResult, PublishAsSystem, PublishTarget, PublishUiArgs, PublishUiResult, PublishVerification } from './studio/publish-as.js';
-export { DEVPRODUCT_TABLE_NAME, compareIds, createDeveloperProduct, getDeveloperProduct, listDeveloperProducts, loadDeveloperProductTable, parseDeveloperProductSource, parseDeveloperProductTable, updateDeveloperProduct } from './devproducts/products.js';
-export type { DeveloperProduct, DeveloperProductRow, ProductFields } from './devproducts/products.js';
+export { DEVPRODUCT_TABLE_NAME, classifyDeveloperProductIcon, compareIds, createDeveloperProduct, getDeveloperProduct, listDeveloperProducts, loadDeveloperProductTable, parseDeveloperProductSource, parseDeveloperProductTable, updateDeveloperProduct } from './devproducts/products.js';
+export type { DeveloperProduct, DeveloperProductIconStatus, DeveloperProductRow, ProductFields } from './devproducts/products.js';
 export { uploadDeveloperProductIcon } from './devproducts/icon.js';
 export type { DeveloperProductIconOptions } from './devproducts/icon.js';
 export { CONFIRM_INSTRUCTION, READBACK_DELAYS_MS, STALE_INSTRUCTION, planToken, planUniverse, syncDeveloperProducts, syncWarnings } from './devproducts/sync.js';

@@ -760,7 +760,7 @@ rbx devproduct sync "Example Development" "Example Test" --source ./开发者产
 rbx devproduct sync "Example Development" "Example Test" --source ./开发者产品.rbxm --confirm "<confirmToken>"
 ```
 
-- `list <游戏>`：只读，分页拉取到最后一页（`nextPageToken` 为空），列出 ProductId、价格、是否在售、是否开地区定价、名称，重名商品带警告（退出码 3）。任何一页失败或页标记重复即报错，不输出半份列表。
+- `list <游戏>`：只读，分页拉取到最后一页（`nextPageToken` 为空），列出 ProductId、价格、是否在售、是否开地区定价、图标状态、名称，重名商品带警告（退出码 3）。任何一页失败或页标记重复即报错，不输出半份列表。图标状态本身不改变查询退出码。
 - `sync <游戏...> --source <rbxm>`：每个宇宙先完整拉取商品列表，再按英文名精确匹配：
   1. 匹配上：仅价格不同时只 PATCH `price`，其他字段不动。
   2. 匹配不上：优先复用闲置商品（云端有、表里没有、非 immutable），按 ProductId 从小到大依次分给表中顺序靠前的行；复用会改 `name`、`price`，并设为在售、关闭地区定价、清空描述，图标保留原样。
@@ -774,11 +774,21 @@ rbx devproduct sync "Example Development" "Example Test" --source ./开发者产
 
 写入前把该宇宙全部商品与计划动作备份到应用数据目录 `devproduct-backups/`（失败则不写该宇宙）；每次写入后读取单个商品核对名称、价格与在售状态；该读取是最终一致的（实测约 2 秒内会在新旧值间跳动，新建商品可能短暂 404），不一致时按 1/2/3/5 秒间隔重读，最多 5 次，结果中 `readbacks` 为读取次数；地区定价不参与核对。写入不自动重试；`failed` 为明确拒绝，`unverified` 为响应丢失或回读不符，先 `devproduct list` 核对再决定是否重跑（重跑前要确认 create 是否已生效，避免重名）。列表同样可能滞后，刚新建后立即重跑 sync 可能看不到新商品而再次新建，新建后请间隔片刻再重跑。存在失败、未确认或被拒绝的宇宙时状态为 `partial`、退出码 3。
 
-API Key 需目标宇宙的 `developer-product:read`（list/sync/icon）与 `developer-product:write`（sync/icon 写入）。接口：[Developer Products (Beta)](https://create.roblox.com/docs/cloud/reference/features/developer-products)。SDK：`listDeveloperProducts`、`planUniverse`、`syncDeveloperProducts`、`loadDeveloperProductTable`、`uploadDeveloperProductIcon`。
+API Key 需目标宇宙的 `developer-product:read`（list/sync/icon）与 `developer-product:write`（sync/icon 写入）。接口：[Developer Products (Beta)](https://create.roblox.com/docs/cloud/reference/features/developer-products)。SDK：`listDeveloperProducts`、`planUniverse`、`syncDeveloperProducts`、`loadDeveloperProductTable`、`uploadDeveloperProductIcon`、`classifyDeveloperProductIcon`。
+
+图标分类只在本地检查 ID，不下载图片、不调用缩略图接口，无需额外权限。列表 JSON 的每个产品、SDK 读取/创建返回的 `DeveloperProduct`，以及图标上传回执中的 `readback` 都包含派生字段 `iconStatus`：
+
+| `iconStatus` | 人类可读输出 | 判定 |
+| --- | --- | --- |
+| `missing` | 未配置 | `iconImageAssetId` 为空或 0（产品结果中统一为 `null`） |
+| `placeholder` | 已知占位图 | 命中集中维护的已知占位图 ID，目前为 `88963008124478` |
+| `configured` | 已配置（显示未验证） | 其他非空 ID，不代表审核通过或图片正常显示 |
+
+非空 `iconImageAssetId` 不能直接视为正常图标。已知占位图清单来自人工核对，不是 Roblox 官方保证不变、完整的默认 ID 清单；未收录的占位图仍可能被分类为 `configured`。SDK 的 `classifyDeveloperProductIcon(iconImageAssetId)` 使用同一规则；原始非零 ID 保留，便于核对。
 
 `devproduct icon <game> <productId> --image <path>` 更新单个产品的默认图标。接受静态 PNG/JPEG（本地限制 20 MiB、4000 万像素），自动校正方向并等比缩小至 512×512 内，不裁剪，保留透明度，转 PNG 后用 multipart `imageFile` 上传。只发送图标字段。`--dry-run` 校验图片并读取产品，不上传或生成备份。正式上传前保存原产品配置（含旧图标 ID）及本次上传的 PNG 到 `devproduct-backups/`；这些记录不是旧图标原文件，也不提供一键恢复。不可修改的商品直接拒绝。SDK 的 `ProductFields.imageFile` 接受 Blob，可供底层创建/更新接口直接使用；底层接口不做图片规范化和备份。
 
-上传只提交一次，随后最多回读 5 次（间隔 0/1/2/3/5 秒）。观察到非空且变化的 `iconImageAssetId` 时返回 `verified`，仅表示图标引用已更新，不代表图片审核已通过；未观察到变化或上传响应丢失返回 `unverified`、退出码 3，先用 `devproduct list <game> --json` 检查，避免盲目重复上传。默认离线验证：`tests/devproduct-icon.test.ts`。
+上传只提交一次，随后最多回读 5 次（间隔 0/1/2/3/5 秒）。观察到变化的 `iconImageAssetId` 且 `iconStatus` 为 `configured` 时返回 `verified`，仅表示图标引用已更新并排除了已知占位图，不代表图片审核已通过或显示正常。占位图回读会继续等待；最后一次回读仍为占位图时返回 `unverified`、`ICON_PLACEHOLDER`，未配置或 ID 未变化时为 `ICON_NOT_VERIFIED`；上传响应丢失也返回 `unverified`，不自动补传。未确认退出码 3，先用 `devproduct list <game> --json` 检查，避免盲目重复上传。默认离线验证：`tests/devproduct-icon.test.ts`。
 
 离线测试：`tests/devproducts.test.ts`。显式真实写测试：
 

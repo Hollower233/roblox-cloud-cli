@@ -50,13 +50,16 @@ export async function uploadDeveloperProductIcon(http: HttpClient, universeId: s
       if (ms) await sleep(ms);
       const after = await getDeveloperProduct(http, universeId, productId);
       receipt.readback = { ...after };
-      if (after.productId === productId && after.iconImageAssetId !== null && after.iconImageAssetId !== before.iconImageAssetId) {
+      if (after.productId === productId && after.iconStatus === 'configured' && after.iconImageAssetId !== before.iconImageAssetId) {
         receipt.state = 'verified';
         delete receipt.error;
         return receipt;
       }
+      receipt.error = after.iconStatus === 'placeholder'
+        ? { code: 'ICON_PLACEHOLDER', message: 'Readback references a known placeholder icon; the uploaded icon is not verified. Inspect devproduct list --json before retrying.' }
+        : { code: 'ICON_NOT_VERIFIED', message: 'No changed, non-placeholder icon ID was observed; inspect devproduct list --json before retrying. Image moderation and display are not verified.' };
     } catch (error) { receipt.error = errorInfo(error); }
   }
-  receipt.error ??= { code: 'ICON_NOT_VERIFIED', message: 'Upload accepted but no changed icon ID was observed; inspect devproduct list --json before retrying. Image moderation is separate.' };
+  receipt.error ??= { code: 'ICON_NOT_VERIFIED', message: 'No changed, non-placeholder icon ID was observed; inspect devproduct list --json before retrying. Image moderation and display are not verified.' };
   return receipt;
 }

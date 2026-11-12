@@ -10,6 +10,7 @@ import { clean, emit } from '../output.js';
 export const CONFIRMATION_EXIT_CODE = 6;
 
 const price = (value: number | null | undefined) => value === null || value === undefined ? '?' : String(value);
+const iconLabels = { missing: '未配置', placeholder: '已知占位图', configured: '已配置（显示未验证）' } as const;
 
 function duplicateNames(products: DeveloperProduct[]): Set<string> {
   const counts = new Map<string, number>();
@@ -66,9 +67,9 @@ export function registerDeveloperProducts(program: Command, context: CommandCont
       if (!json()) process.stderr.write('\n');
       const duplicates = duplicateNames(products);
       const warnings = [...duplicates].map(name => ({ code: 'DUPLICATE_PRODUCT_NAME', message: `Duplicated name ${JSON.stringify(name)}; devproduct sync refuses this universe.`, resource: universeId }));
-      const rows = products.map(p => `${p.productId}\t${p.price ?? '?'}\t${p.isForSale ? 'yes' : 'no'}\t${p.regionalPricing ? 'yes' : 'no'}\t${duplicates.has(p.name) ? '⚠重名 ' : ''}${clean(p.name)}`);
+      const rows = products.map(p => `${p.productId}\t${p.price ?? '?'}\t${p.isForSale ? 'yes' : 'no'}\t${p.regionalPricing ? 'yes' : 'no'}\t${iconLabels[p.iconStatus]}\t${duplicates.has(p.name) ? '⚠重名 ' : ''}${clean(p.name)}`);
       emit({ universeId, count: products.length, products }, json(),
-        `Universe: ${universeId}  (${products.length} products)\nPRODUCT ID\tPRICE\tFOR SALE\tREGIONAL\tNAME\n${rows.join('\n')}`, warnings);
+        `Universe: ${universeId}  (${products.length} products)\nPRODUCT ID\tPRICE\tFOR SALE\tREGIONAL\tICON\tNAME\n${rows.join('\n')}`, warnings);
     });
 
   root.command('sync <games...>').description('Push the developer product table (match by English name: update price, reuse products not in the table, create the rest)')

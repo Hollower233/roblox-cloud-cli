@@ -14,7 +14,7 @@ async function setup(run: (dir: string, image: string) => Promise<void>) {
     await run(dir, image);
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
-function cloud(options: { stale?: number; failure?: number | 'timeout'; immutable?: boolean } = {}) {
+function cloud(options: { stale?: number; failure?: number | 'timeout'; immutable?: boolean; beforeIcon?: number; readbackIcons?: readonly (number | null)[] } = {}) {
   let writes = 0, reads = 0;
   const bodies: FormData[] = [];
   const http = new HttpClient({ apiKey: 'fictional', intervalMs: 0, fetch: async (url, init) => {
@@ -26,9 +26,12 @@ function cloud(options: { stale?: number; failure?: number | 'timeout'; immutabl
       return new Response(null, { status: options.failure ?? 204 });
     }
     reads++;
+    const iconImageAssetId = writes && options.readbackIcons
+      ? options.readbackIcons[Math.min(reads - 2, options.readbackIcons.length - 1)]
+      : writes && reads > (options.stale ?? 0) + 1 ? 999 : options.beforeIcon ?? 111;
     return Response.json({ productId: 456, universeId: 123, name: 'Coin boost', isForSale: true,
       isImmutable: options.immutable, priceInformation: { defaultPriceInRobux: 15 },
-      iconImageAssetId: writes && reads > (options.stale ?? 0) + 1 ? 999 : 111 });
+      iconImageAssetId });
   } });
   return { http, bodies, counts: () => ({ writes, reads }) };
 }
@@ -37,6 +40,7 @@ test('icon sends only imageFile, normalizes without cropping, backs up before st
   const result = await uploadDeveloperProductIcon(fake.http, '123', '456', image, { backupDirectory: join(dir, 'backup'), sleep: async ms => { waits.push(ms); } });
   assert.equal(result.state, 'verified');
   assert.equal(result.readback?.iconImageAssetId, '999');
+  assert.equal(result.readback?.iconStatus, 'configured');
   assert.deepEqual(fake.counts(), { writes: 1, reads: 4 });
   assert.deepEqual(waits, [1000, 2000]);
   assert.deepEqual([...fake.bodies[0]!.keys()], ['imageFile']);
@@ -73,4 +77,43 @@ test('backup failure prevents upload', async () => setup(async (dir, image) => {
   const fake = cloud();
   await assert.rejects(uploadDeveloperProductIcon(fake.http, '123', '456', image, { backupDirectory: image }), { code: 'STORAGE_ERROR' });
   assert.equal(fake.counts().writes, 0);
+}));
+
+test('changed placeholder IDs and missing IDs never verify an icon upload or repeat the write', async () => setup(async (dir, image) => {
+  for (const icon of [88963008124478, 0, null]) {
+    const fake = cloud({ readbackIcons: [icon] }), waits: number[] = [];
+    const result = await uploadDeveloperProductIcon(fake.http, '123', '456', image, { backupDirectory: dir, sleep: async ms => { waits.push(ms); } });
+    assert.equal(result.state, 'unverified');
+    assert.equal(result.readback?.iconStatus, icon ? 'placeholder' : 'missing');
+    assert.equal(result.error?.code, icon ? 'ICON_PLACEHOLDER' : 'ICON_NOT_VERIFIED');
+    if (icon) {
+      assert.equal(result.readback?.iconImageAssetId, '88963008124478');
+      assert.match(result.error!.message, /known placeholder/);
+    }
+    assert.deepEqual(fake.counts(), { writes: 1, reads: 6 });
+    assert.deepEqual(waits, [1000, 2000, 3000, 5000]);
+  }
+}));
+
+test('placeholder readback can settle to a configured icon and clears the earlier error', async () => setup(async (dir, image) => {
+  const fake = cloud({ readbackIcons: [88963008124478, 999] }), waits: number[] = [];
+  const result = await uploadDeveloperProductIcon(fake.http, '123', '456', image, { backupDirectory: dir, sleep: async ms => { waits.push(ms); } });
+  assert.equal(result.state, 'verified');
+  assert.equal(result.readback?.iconStatus, 'configured');
+  assert.equal(result.error, undefined);
+  assert.deepEqual(fake.counts(), { writes: 1, reads: 3 });
+  assert.deepEqual(waits, [1000]);
+}));
+
+test('a previous placeholder can be replaced, but an unchanged placeholder stays unverified', async () => setup(async (dir, image) => {
+  const beforeIcon = 88963008124478;
+  const configured = cloud({ beforeIcon });
+  const result = await uploadDeveloperProductIcon(configured.http, '123', '456', image, { backupDirectory: dir, sleep: async () => {} });
+  assert.equal(result.state, 'verified');
+  assert.equal(JSON.parse(await readFile(result.backupPath!, 'utf8')).before.iconStatus, 'placeholder');
+  const unchanged = cloud({ beforeIcon, readbackIcons: [beforeIcon] });
+  const pending = await uploadDeveloperProductIcon(unchanged.http, '123', '456', image, { backupDirectory: dir, sleep: async () => {} });
+  assert.equal(pending.state, 'unverified');
+  assert.equal(pending.error?.code, 'ICON_PLACEHOLDER');
+  assert.equal(unchanged.counts().writes, 1);
 }));

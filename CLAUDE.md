@@ -160,7 +160,9 @@
 
 ## 开发者产品同步
 
-- 单产品默认图标上传：`src/devproducts/icon.ts`，命令 `devproduct icon <游戏> <productId> --image <path> [--dry-run]`，SDK `uploadDeveloperProductIcon`。PNG/JPEG 等比缩小至 512×512 内，保留透明度；PATCH 只发 `imageFile`，写前备份配置与上传 PNG，写后回读图标 ID，最多 5 次，只读重试。`verified` 仅表示图标引用变更，不代表审核通过；未确认退出码 3。权限 `developer-product:read/write`；离线 `tests/devproduct-icon.test.ts`。
+- 单产品默认图标上传：`src/devproducts/icon.ts`，命令 `devproduct icon <游戏> <productId> --image <path> [--dry-run]`，SDK `uploadDeveloperProductIcon`。PNG/JPEG 等比缩小至 512×512 内，保留透明度；PATCH 只发 `imageFile`，写前备份配置与上传 PNG，写后回读图标 ID，最多 5 次，只读重试。仅 ID 变化且 `iconStatus=configured` 时为 `verified`，只表示引用变更并排除已知占位图，不代表审核通过或显示正常；占位图继续回读，最终仍为占位图时报 `ICON_PLACEHOLDER`，未确认退出码 3。权限 `developer-product:read/write`；离线 `tests/devproduct-icon.test.ts`。
+
+- 图标 ID 分类：`src/devproducts/products.ts`，SDK `classifyDeveloperProductIcon` 与类型 `DeveloperProductIconStatus`。`DeveloperProduct.iconStatus` / `devproduct list` 区分 `missing`（空或 0）、`placeholder`（已知占位图 ID 集合，目前 `88963008124478`）、`configured`（其他非空 ID，显示未验证）；保留非零原 ID，不额外请求缩略图、不新增权限，查询退出码不受图标状态影响。不得仅凭非空 ID 断言正常图标；清单不是官方完整默认 ID 表。离线 `tests/devproducts.test.ts`。
 
 - 接口、表解析、分页：`src/devproducts/products.ts`；diff 计划、确认码、执行与备份：`src/devproducts/sync.ts`；通用行解析 `parseRecordRows`：`src/localization/lua-table.ts`。
 - CLI：`src/cli/commands/devproducts.ts`，命令 `devproduct list <游戏>`、`devproduct sync <游戏...> --source <rbxm> [--confirm <token>]`；SDK 导出：`src/index.ts`。
