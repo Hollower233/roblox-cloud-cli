@@ -513,14 +513,17 @@ servers.command('status').description('Read active servers and the estimated cou
     const http = new HttpClient({ apiKey, signal: abort.signal });
     cloudContext.output(await getUniverseServerStatus(http, universe));
   });
-servers.command('restart').description('Submit a restart for all active places in a universe')
+servers.command('restart').description('Submit a restart for one place or all active places in a universe')
   .requiredOption('--universe <id>', 'Target Universe ID', id)
+  .option('--place <id>', 'Restart only this Place ID (default: all active places)', id)
   .option('--all', 'Restart all versions (default: outdated versions only)')
   .option('--countdown', 'Delay the restart by exactly one minute on Roblox')
-  .action(async (options: { universe: string; all?: boolean; countdown?: boolean }) => {
+  .action(async (options: { universe: string; place?: string; all?: boolean; countdown?: boolean }) => {
     const apiKey = await new CredentialStore(store().home).get();
     const http = new HttpClient({ apiKey, signal: abort.signal });
-    cloudContext.receipt(await restartUniverseServers(http, options.universe, options));
+    cloudContext.receipt(await restartUniverseServers(http, options.universe, {
+      ...options, ...(options.place === undefined ? {} : { placeIds: [options.place] }),
+    }));
   });
 
 const studio = program.command('studio').description('Open places in local Roblox Studio (Windows)');

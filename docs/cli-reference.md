@@ -664,15 +664,17 @@ rbx --json servers restart --universe 123
 rbx --json servers restart --universe 123 --countdown
 rbx --json servers restart --universe 123 --all
 rbx --json servers restart --universe 123 --all --countdown
+rbx --json servers restart --universe 123 --place 456
+rbx --json servers restart --universe 123 --place 456 --all --countdown
 ```
 
 `servers status` 使用 Roblox 的 Beta 只读影响预估接口，要求目标宇宙的 `universe:read` 权限。`activeServers` 是活跃服务器总数，包含旧服。`outdatedServers` 是 Roblox 预估只重启旧服时会影响的数量。`places` 按 Place 列出相同的两项数据，已移出宇宙的 Place 不计入汇总。SDK 对应调用为 `getUniverseServerStatus(http, '123')`。
 
-必须显式传入数字 Universe ID。命令覆盖该宇宙的所有活跃 Place，默认立即重启旧服。`--all` 纳入当前版本，`--countdown` 由 Roblox 固定延迟一分钟。使用现有 API Key，需为目标宇宙授权 `universe:write`。命令直接提交，无需交互或提前录入本地游戏目录。
+必须显式传入数字 Universe ID。省略 `--place` 时覆盖该宇宙的所有活跃 Place；指定 `--place <id>` 时仅重启该 Place。默认立即重启旧服。`--all` 纳入当前版本，不扩大 Place 范围；`--countdown` 由 Roblox 固定延迟一分钟。Place ID 必须为正的安全整数，归属与实际访问权由 Roblox 校验，失败不会回退为全宇宙重启。使用现有 API Key，需为目标宇宙授权 `universe:write`。命令直接提交，无需交互或提前录入本地游戏目录。
 
 回执的 `data.state: "submitted"` 表示 Roblox 接收了请求。实际重启由 Roblox 执行，Stable 接口不返回重启 ID。遇到超时等无法确认的结果，命令返回 `unverified` 并退出 3。先在 Creator Hub 的服务器管理查看进度，再决定是否重新提交。
 
-SDK 对应调用为 `restartUniverseServers(http, '123', { all: false, countdown: true })`。接口参考 [Restart Universe Servers](https://create.roblox.com/docs/cloud/reference/features/universes#Cloud_RestartUniverseServers)。
+SDK 对应调用为 `restartUniverseServers(http, '123', { placeIds: ['456'], all: false, countdown: true })`。`placeIds` 可指定多个 Place，自动去重并作为数字数组发送；省略时覆盖所有活跃 Place，显式空数组或无效 ID 会在请求前报错。回执 `request.body.placeIds` 保留选定范围。写请求不自动重试。接口参考 [Restart Universe Servers](https://create.roblox.com/docs/cloud/reference/features/universes#Cloud_RestartUniverseServers)。
 
 ## 打开 Studio 项目（Windows）
 

@@ -5,6 +5,12 @@
 - Key、Cookie、真实账号扫描结果不得提交。真实 API 测试显式运行，默认测试离线。
 - 将可复用的 Roblox API 操作沉淀为正式 CLI/SDK 能力；实现前先与用户确认目标与边界，避免依赖一次性脚本。
 
+## 发布文案
+
+- 内部文档、变更记录和技术说明可以详细，完整记录实现、原因与验证结果。
+- Publish 时提交到 Roblox 的标题和描述（含版本备注）尽量简短、客观：标题用短语概括，描述只写必要的改动摘要；可选且无必要的描述留空。
+- 不直接复制内部技术说明作为发布文案，减少无关术语、敏感或歧义措辞，降低误触文本审核的可能；保持含义准确，不用谐音、拆字等方式规避审核。简短不代表保证通过审核。
+
 ## 命令与业务模块
 
 - 命令入口与输出：`src/cli/main.ts`、`src/cli/output.ts`。
@@ -131,6 +137,7 @@
 
 - 重启模块：`src/universes/restart.ts`；命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - `servers restart --universe <ID>` 默认立即重启所有活跃 Place 的旧服。`--all` 纳入当前版本，`--countdown` 由 Roblox 延迟一分钟。
+- `--place <ID>` 仅重启指定 Place，可与 `--all/--countdown` 组合；`--all` 不扩大 Place 范围。SDK `ServerRestartOptions.placeIds` 支持多个 ID，去重后发送数字数组，空数组与非法 ID 在请求前拒绝；省略才覆盖所有活跃 Place。不自动重试写请求，归属由 Roblox 校验，失败不回退为全宇宙重启。权限仍为 `universe:write`。
 - `servers status --universe <ID>` 通过只读重启影响预估接口汇总活跃服务器和预计受影响的旧服。
 - 离线验证：`tests/server-restart.test.ts`。
 

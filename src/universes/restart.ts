@@ -3,6 +3,8 @@ import { AppError, errorInfo, id } from '../core/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
 
 export interface ServerRestartOptions {
+  /** Omit to restart all active places. An explicit list must not be empty. */
+  placeIds?: string[];
   all?: boolean;
   countdown?: boolean;
 }
@@ -46,10 +48,15 @@ export async function getUniverseServerStatus(http: HttpClient, universeId: stri
 }
 
 export async function restartUniverseServers(http: HttpClient, universeId: string, options: ServerRestartOptions = {}): Promise<WriteReceipt> {
+  if (options.placeIds !== undefined && (!Array.isArray(options.placeIds) || options.placeIds.length === 0)) {
+    throw new AppError('ARGUMENT_ERROR', 'placeIds must be a nonempty array of Place IDs; omit it to restart all active places.');
+  }
+  const placeIds = options.placeIds === undefined ? undefined : [...new Set(options.placeIds.map(value => Number(id(value))))];
   const request = {
     method: 'POST',
     url: `https://apis.roblox.com/cloud/v2/universes/${id(universeId)}:restartServers`,
     body: {
+      ...(placeIds === undefined ? {} : { placeIds }),
       closeAllVersions: options.all === true,
       bleedOffServers: options.countdown === true,
       ...(options.countdown === true ? { bleedOffDurationMinutes: 1 } : {}),

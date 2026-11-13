@@ -59,7 +59,7 @@ const features: PermissionFeature[] = [
   feature('events-write', '创建、修改与删除游戏活动', ['events create', 'events update', 'events delete'], ['universe.event:read', 'universe.event:write'], ['修改、删除前读取原值；创建与修改后回读。不包含旧版更新通知。']),
   feature('events-image', '上传活动图片', ['events upload-image'], ['asset:read', 'asset:write'], ['图片属于指定用户或群组；返回 mediaId 用于 --thumbnail，不代表审核通过或显示正常。']),
   feature('events-image-read', '查询活动图片上传操作', ['events image-operation'], ['asset:read']),
-  feature('servers-restart', '重启服务器', ['servers restart'], ['universe:write']),
+  feature('servers-restart', '重启服务器', ['servers restart'], ['universe:write'], ['可用 --place 限定单个 Place；省略时重启所有活跃 Place。--all 指所有版本，不扩大 Place 范围。']),
   feature('restriction-get', '查询玩家封禁', ['ban-status'], ['universe.user-restriction:read']),
   feature('restriction-write', '封禁或解封玩家', ['ban', 'unban'], ['universe.user-restriction:write']),
   feature('group-read', '查询群组角色和成员', ['group roles', 'group member'], ['group:read']),
