@@ -74,3 +74,9 @@ export { CONFIRM_INSTRUCTION, READBACK_DELAYS_MS, STALE_INSTRUCTION, planToken, 
 export type { ActionResult, ActionState, PlannedAction, DeveloperProductSyncOptions, DeveloperProductSyncResult, UniversePlan, UniverseResult } from './devproducts/sync.js';
 export { parseRecordRows } from './localization/lua-table.js';
 export type { RecordRow, RecordValue } from './localization/lua-table.js';
+export { GameEvents, eventCategories, eventId, eventTime, validateEventFields } from './events/events.js';
+export type { GameEvent, EventFields, CreateEventFields, EventCategory, EventListOptions } from './events/events.js';
+export { uploadEventImage, getEventImageOperation } from './events/images.js';
+export type { EventImageOptions } from './events/images.js';
+export { eventRules, eventTextSummary, validateEventText } from './events/rules.js';
+export type { EventTextField } from './events/rules.js';

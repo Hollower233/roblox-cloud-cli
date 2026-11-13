@@ -166,6 +166,16 @@
 - 不做线上回读、不需要 API Key：Save 后对话框关闭即成功；Team Create 下备注挂到当前最新版本。账本：应用数据目录 `place-versions/<PlaceId>.jsonl`。
 - 离线验证：`tests/studio-save-notes.test.ts`；真实界面只用 `--dry-run` 验证，真实保存需用户明确要求。
 
+## 游戏活动
+
+- 活动模型、校验、分页与写入回读：`src/events/events.ts`；图片上传与异步操作查询：`src/events/images.ts`；结果持久化：`src/events/receipts.ts`。
+- CLI：`src/cli/commands/events.ts`，命令 `events categories/list/get/create/update/delete/upload-image/image-operation`；SDK：`GameEvents`、`uploadEventImage`、`getEventImageOperation`，由 `src/index.ts` 导出。仅管理游戏活动，不包含旧版更新通知；API 为 Experimental。
+- 活动 ID 超过 2^53，必须用十进制字符串，不使用普通 `id()` 或 Number；其他 ID 继续要求安全整数。时间必须带时区；PATCH 只发送显式字段，单端时间修改与原时间合并校验。创建、修改后核对回读字段及 `allThumbnailsCreated`，删除以 204 确认；不自动重试写入，结果不明返回 `unverified`、退出码 3。
+- 图片分步上传，显式指定 User/Group creator；PNG/JPEG 转 PNG，通过 Assets API 上传，返回 mediaId 供 `--thumbnail` 绑定。保留未完成操作 ID，`image-operation` 只读查询；上传完成及引用核对不代表审核通过或正常显示。活动权限 `universe.event:read/write`；图片 `asset:read/write`。
+- CLI 写前备份与写后回执：应用数据目录 `event-backups/`（原配置/请求、`.result.json`；图片另存 `.png`、已接受操作 `.operation.json`）。删除备份不能恢复原活动 ID 或 RSVP；SDK 活动备份目录可选，图片上传必须提供备份目录。
+- 默认列表为进行中及未来活动，`--all` 包含结束活动；完整翻页并拒绝循环游标。离线验证：`tests/events.test.ts`，仅虚构数据，不运行真实写入。
+- 文本规则唯一源头：`src/events/rules.ts`；`events rules` 离线显示规则与来源，SDK 导出 `eventRules/eventTextSummary/validateEventText`。按官方 Dashboard 前端快照（2026-11-13）校验 title/subtitle/description 的 25/25/1000 UTF-16 单位上限，emoji、变体符、连接符计入；不自动截断或改写。CLI 参数／文件与 SDK 同步校验，超限早于请求；CLI 创建修改回执 `validation` 显示已提供字段的长度与剩余量，声明本地校验不包含服务端审核。400 文本异常提示规则，不断言必为超长；HTTP 诊断脱敏且限制输出长度。
+
 ## 开发者产品同步
 
 - 单产品默认图标上传：`src/devproducts/icon.ts`，命令 `devproduct icon <游戏> <productId> --image <path> [--dry-run]`，SDK `uploadDeveloperProductIcon`。PNG/JPEG 等比缩小至 512×512 内，保留透明度；PATCH 只发 `imageFile`，写前备份配置与上传 PNG，写后回读图标 ID，最多 5 次，只读重试。仅 ID 变化且 `iconStatus=configured` 时为 `verified`，只表示引用变更并排除已知占位图，不代表审核通过或显示正常；占位图继续回读，最终仍为占位图时报 `ICON_PLACEHOLDER`，未确认退出码 3。权限 `developer-product:read/write`；离线 `tests/devproduct-icon.test.ts`。

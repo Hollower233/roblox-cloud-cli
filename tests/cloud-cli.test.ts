@@ -24,6 +24,7 @@ async function withCli(action: (fixture: { run: (...args: string[]) => Promise<v
     return Response.json({ operation: { operationId: 'op_example', done: false } });
   }) as typeof fetch });
   const context: CommandContext = {
+    async connection() { return { local: new LocalStore(home), http }; },
     signal: new AbortController().signal,
     async universe(input) { assert.equal(input, 'Example Game'); return { local: new LocalStore(home), universeId: '1', http }; },
     output() {}, receipt(result) { results.push(result); },

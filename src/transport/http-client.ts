@@ -25,7 +25,7 @@ export class HttpClient {
     this.queues.set(host, task);
     await task;
   }
-  async request<T>(url: string, options: { auth?: boolean; method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; rawBody?: string; form?: FormData; headers?: Record<string, string>; rawResponse?: boolean } = {}): Promise<T> {
+  async request<T>(url: string, options: { auth?: boolean; method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; rawBody?: string; form?: FormData; headers?: Record<string, string>; rawResponse?: boolean; validationDetails?: boolean } = {}): Promise<T> {
     const target = new URL(url);
     if (target.protocol !== 'https:' || !hosts.has(target.host) || target.username || target.password) throw new AppError('ARGUMENT_ERROR', 'Unsupported Roblox API destination.');
     if (options.auth && target.host !== 'apis.roblox.com') throw new AppError('ARGUMENT_ERROR', 'API keys may only be sent to apis.roblox.com.');
@@ -51,8 +51,24 @@ export class HttpClient {
           redirect: 'error', signal,
         });
         if (!response.ok) {
-          // Never include an untrusted response body, request headers or key in errors.
-          await response.body?.cancel();
+          // Response bodies stay hidden by default. Event validation can opt into bounded,
+          // credential-redacted ProblemDetails text; never include request headers.
+          let validation = '';
+          if (options.validationDetails && response.status === 400) {
+            try {
+              const problem = await response.json() as Record<string, unknown>;
+              const messages = [problem.title, problem.detail];
+              if (problem.errors && typeof problem.errors === 'object' && !Array.isArray(problem.errors)) {
+                for (const [field, errors] of Object.entries(problem.errors)) {
+                  if (Array.isArray(errors)) for (const message of errors) if (typeof message === 'string') messages.push(`${field}: ${message}`);
+                }
+              }
+              let detail = messages.filter((value): value is string => typeof value === 'string').join(' ');
+              if (this.options.apiKey) detail = detail.split(this.options.apiKey).join('[REDACTED]');
+              detail = detail.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, ' ').slice(0, 600);
+              if (detail) validation = ` ${detail}`;
+            } catch { /* Keep the generic error if this is not ProblemDetails JSON. */ }
+          } else await response.body?.cancel();
           if (retryable && [429, 500, 502, 503, 504].includes(response.status) && attempt < (this.options.retries ?? 3)) {
             const header = response.headers.get('retry-after');
             const requested = header === null ? NaN : /^\d+(\.\d+)?$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now();
@@ -61,7 +77,7 @@ export class HttpClient {
             continue;
           }
           const code = response.status === 401 ? 'AUTH_INVALID' : response.status === 403 ? 'FORBIDDEN' : 'HTTP_ERROR';
-          throw new AppError(code, `Roblox ${target.pathname} returned HTTP ${response.status}.`, response.status);
+          throw new AppError(code, `Roblox ${target.pathname} returned HTTP ${response.status}.${validation}`, response.status);
         }
         if (options.rawResponse) return { status: response.status, text: await response.text(), headers: Object.fromEntries(response.headers) } as T;
         try { return await response.json() as T; }

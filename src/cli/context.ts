@@ -10,6 +10,7 @@ import { clean, emit } from './output.js';
 import type { WriteReceipt } from '../cloud/common.js';
 
 export interface CommandContext {
+  connection(): Promise<{ local: LocalStore; http: HttpClient }>;
   universe(input: string): Promise<{ local: LocalStore; universeId: string; http: HttpClient }>;
   output(data: unknown): void;
   receipt(result: WriteReceipt): void;
@@ -21,8 +22,13 @@ export async function readJsonFile(path: string): Promise<unknown> {
 }
 export function commandContext(program: Command, signal: AbortSignal): CommandContext {
   const json = () => Boolean(program.opts().json);
+  const connection = async () => {
+    const local = new LocalStore(resolve(program.opts().home ?? defaultHome()));
+    return { local, http: new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal }) };
+  };
   return {
     signal,
+    connection,
     async universe(input) {
       const local = new LocalStore(resolve(program.opts().home ?? defaultHome())), config = await local.config();
       const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;

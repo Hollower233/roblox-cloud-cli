@@ -40,6 +40,19 @@ test('403 is not retried and cancellation is classified', async () => {
   const controller = new AbortController(); controller.abort();
   await assert.rejects(new HttpClient({ signal: controller.signal }).request('https://games.roblox.com/v1/games'), { code: 'CANCELLED' });
 });
+
+test('opt-in validation diagnostics redact the configured key, strip controls and stay bounded', async () => {
+  let calls = 0;
+  const http = new HttpClient({ apiKey: key, intervalMs: 0, fetch: fetchMock(() => {
+    calls++;
+    return Response.json({ title: 'Invalid request', detail: `\u001b[31m${key}`, errors: { title: [`${key} too long`, 'x'.repeat(1000)] } }, { status: 400 });
+  }) });
+  for (const validationDetails of [false, true]) await assert.rejects(http.request('https://apis.roblox.com/virtual-events/v3/universes/123/game-events', { auth: true, method: 'POST', body: {}, validationDetails }), (error: any) => {
+    assert.equal(error.httpStatus, 400); assert.ok(!error.message.includes(key)); assert.ok(!error.message.includes('\u001b')); assert.ok(error.message.length < 750);
+    assert.equal(error.message.includes('Invalid request'), validationDetails); return true;
+  });
+  assert.equal(calls, 2);
+});
 test('HTTP adapters use verified numeric filters, encode cursors and validate responses', async () => {
   const urls: string[] = [];
   const api = new RobloxApi(new HttpClient({ apiKey: key, intervalMs: 0, fetch: fetchMock(url => { urls.push(url); return ok({ data: [{ id: 1, name: 'Fixture' }], nextPageCursor: null }); }) }), key);

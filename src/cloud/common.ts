@@ -24,7 +24,7 @@ export function pageNumber(value: number, minimum = 0): number {
   return value;
 }
 export interface WriteOptions { dryRun?: boolean; backupDirectory?: string }
-export interface CloudRequest { method: 'GET' | 'POST' | 'PATCH'; url: string; body?: JsonObject }
+export interface CloudRequest { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; url: string; body?: JsonObject }
 export interface WriteReceipt {
   universeId: string; state: 'planned' | 'submitted' | 'verified' | 'pending' | 'unverified';
   request: CloudRequest; backupPath?: string; response?: JsonObject; readback?: JsonObject;

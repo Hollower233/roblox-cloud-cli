@@ -4,6 +4,7 @@ import { commandContext } from './context.js';
 import { registerConfigs } from './commands/configs.js';
 import { registerAuthPermissions } from './commands/auth-permissions.js';
 import { registerPlaces } from './commands/places.js';
+import { registerEvents } from './commands/events.js';
 import { registerDeveloperProducts } from './commands/devproducts.js';
 import { registerExperiments } from './commands/experiments.js';
 import { registerLocalizationTable } from './commands/localization-table.js';
@@ -499,6 +500,7 @@ icon.command('countdown <universeId> [folder]')
 
 registerConfigs(program, cloudContext);
 registerPlaces(program, cloudContext);
+registerEvents(program, cloudContext);
 registerDeveloperProducts(program, cloudContext);
 registerExperiments(program, cloudContext);
 registerLocalizationTable(program, localization, cloudContext);

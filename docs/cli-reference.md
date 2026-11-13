@@ -816,3 +816,87 @@ npm run build; npm run test:live:devproducts
 ```
 
 它在开发宇宙验证完整翻页、改价并还原、新建、复用的两步确认（无确认码/错误码/过期码均不写入）。开发者产品无法删除，脚本最多保留一个 `ZZ CLI Test …` 商品（下架状态），后续运行复用它；结束时还原所有原商品价格。
+
+## 游戏活动（Events）
+
+管理 Creator Dashboard「活动与更新」中的活动，支持名称、副标题、说明、类别、起止时间、进入 Place、公开／私人可见性和图片。不包含页面链接到的旧版更新通知。使用官方 [Game Events API（Experimental）](https://create.roblox.com/docs/cloud/reference/features/virtual-events.md)，无需 Cookie 或 Studio。图片通过 [Assets API](https://create.roblox.com/docs/cloud/guides/usage-assets) 单独上传后绑定。
+
+```powershell
+rbx events rules
+rbx events categories
+rbx events list "Example Game"
+rbx events list 123456 --all --visibility private
+rbx events list 123456 --starts-after "2026-12-01T00:00:00-08:00" --ends-before "2027-01-01T00:00:00-08:00"
+rbx events get 9007199254740993123
+
+# 创建预览；审阅后去掉 --dry-run 才会提交
+rbx events create 123456 --title "Winter Festival" --subtitle "New quests await" --description "Complete seasonal quests." --start "2026-12-01T18:00:00-08:00" --end "2026-12-08T18:00:00-08:00" --visibility private --category festival --dry-run
+
+# 群组托管活动用 --group；进入非根 Place 用 --place
+rbx events create "Example Game" --file ./event.json --dry-run
+rbx events update 9007199254740993123 --title "Updated Festival" --dry-run
+rbx events update 9007199254740993123 --visibility public --dry-run
+rbx events delete 9007199254740993123 --dry-run
+
+# 图片单独上传，以便失败后复用 ID；--user 与 --group 必须且只能选一个
+rbx events upload-image ./festival.png --group 123456 --dry-run
+rbx events upload-image ./festival.png --group 123456
+rbx events image-operation operations/example_operation
+rbx events update 9007199254740993123 --thumbnail 456789 --dry-run
+
+rbx auth check --for events-write --universe 123456
+rbx auth permissions --for events-image
+```
+
+`<game>` 接受 Universe ID 或本地游戏目录精确名称。`get/update/delete` 直接使用活动 ID，不需要指定游戏；修改和删除先读取所属宇宙及原值。活动 ID 可超过 2^53，CLI 和 SDK 全程保留字符串，SDK 调用也必须传字符串。Place、群组和图片素材 ID 必须是正安全整数。
+
+`list` 自动完成分页并拒绝循环游标。默认由服务端列出进行中和未来活动；`--all` 设置 `endsAfter=1970-01-01T00:00:00Z`，包含结束活动。可按 `--visibility public/private/moderated` 以及 `--starts-before/--starts-after/--ends-before/--ends-after` 筛选。显式结束时间筛选优先于 `--all`。空列表不证明目标宇宙存在或有编辑权限。
+
+创建必须提供 `title/subtitle/startTime/endTime/visibility`。`--category` 和 `--thumbnail` 支持多个值，按输入顺序从 rank 0 排列。类别必须来自 `events categories`，不允许重复类别、图片或 rank。省略图片时使用 Roblox 的默认体验缩略图；省略 Place 时使用根 Place。群组活动通过 `--group <id>` 指定 host，省略时使用当前认证用户。可见性写入只接受 `public/private`，`moderated` 由服务端管理。活动名等文本仍需通过 Roblox 服务端审核与长度校验；本地限制说明不超过 1000 字符。时间必须包含秒和 `Z` 或 UTC 偏移，统一转为 UTC；拒绝无时区、无效日期和结束不晚于开始的计划。只修改起点或终点时，合并线上原值检查时间先后。
+
+`--file` 使用 UTF-8 JSON，不能与任何活动字段参数混用。创建文件示例（全部为虚构数据）：
+
+```json
+{
+  "title": "Winter Festival",
+  "subtitle": "New quests await",
+  "description": "Complete seasonal quests.",
+  "startTime": "2026-12-01T18:00:00-08:00",
+  "endTime": "2026-12-08T18:00:00-08:00",
+  "visibility": "private",
+  "groupId": 123456,
+  "placeId": 234567,
+  "categories": [{ "category": "festival", "rank": 0 }],
+  "thumbnails": [{ "mediaId": 456789, "rank": 0 }]
+}
+```
+
+修改文件只放要变更的字段（不允许 `groupId`）；未提供字段不变，拒绝未知字段、`null` 和空更新。清空说明可用 `--description ""` 或 JSON `"description": ""`；清空图片／类别用 JSON `"thumbnails": []`／`"categories": []`。图片和类别数组按整体替换处理。
+
+所有写命令支持 `--dry-run`：创建只校验和展示请求，修改／删除会读取原活动但不写入，图片只在本地解码校验；均不上传、不生成备份。正式写入前在应用数据目录 `event-backups/` 保存原活动和计划请求，失败则不提交。创建、修改后回读并核对请求字段，创建时指定的群组也核对 host；响应中 `allThumbnailsCreated=false` 或回读不符时为 `unverified`。删除是永久删除，以服务端 204 确认，备份只能用于手动重建内容，无法恢复原活动 ID、RSVP 或通知状态。没有自动恢复命令。
+
+图片接受静态 PNG/JPEG，限制原文件 20 MiB、4000 万像素，校正方向后转 PNG，保留尺寸和透明度。上传前保存请求摘要和本次 PNG，提交后保存操作 ID 到 `.operation.json`，最多只读查询 10 次，每次间隔 2 秒；未完成返回 `pending` 和 `operationId`，用 `image-operation <operationId>` 继续查询，不能直接重传。上传完成时 `response.mediaId` 可用于创建或修改的 `--thumbnail`，`moderationState` 仅为上传响应提供的状态；`verified` 只表示上传操作完成或活动引用一致，不证明审核通过或显示正常。图片回执的 `universeId` 为空字符串，因为素材属于指定 creator，尚未绑定游戏。
+
+写入不自动重试。网络中断、超时、5xx、响应格式异常或回读失败可能发生在服务器已生效之后，返回 `unverified`；已知的活动 ID、操作 ID、响应及错误保留在输出和备份旁 `.result.json`，先查询再决定是否重跑。支持全局 `--json`，沿用 `{ schemaVersion, status, data, warnings }`；计划或确认成功退出 0，`pending/unverified` 退出 3，参数错误退出 2，无凭证／无效 Key 退出 4，403 退出 5，其余明确错误使用通用错误退出码。审核或服务端业务拒绝不会被包装成成功。
+
+权限：`events-read` 为 `universe.event:read`；`events-write` 为目标游戏的 `universe.event:read/write`（创建后回读、修改删除前读取）；`events-image` 为 creator 范围的 `asset:read/write`，`events-image-read` 为 `asset:read`。已有素材 ID 的绑定不额外申请素材上传权限。账号及群组角色仍需 Roblox 的实际活动管理权限。
+
+SDK：`new GameEvents(http).list/get/create/update/delete`、`eventCategories`、`eventId`、`eventTime`、`validateEventFields`、`eventRules`、`eventTextSummary`、`validateEventText`、`uploadEventImage`、`getEventImageOperation`。活动写方法可传 `{ dryRun, backupDirectory }`；CLI 必定备份，SDK 活动备份目录可选；图片正式上传必须指定备份目录。离线验证：`tests/events.test.ts`，使用虚构响应和临时图片；默认测试不访问真实 API。
+
+### 活动文本校验与规则提示
+
+`rbx events rules` 完全离线、无需 Key，返回标题／副标题／说明的限制、计数方式、时间和可见性规则、仍需服务端确认的项目，以及规则来源。`create/update --help` 也显示文本上限。规则统一维护在 `src/events/rules.ts`，CLI 参数与 JSON 文件、SDK、正式提交与 `--dry-run` 使用同一份校验；超限在获取凭证或请求 API 前拒绝（SDK 不发请求），退出码 2。
+
+| 字段 | 上限（UTF-16 code units） | 空值规则 |
+| --- | --- | --- |
+| `title` | 25 | 创建必填；不能空白 |
+| `subtitle` | 25 | 创建必填；不能空白 |
+| `description` | 1000 | 可省略；空字符串清空 |
+
+长度按 JavaScript `string.length` 计算，不是可见字形数，也不是 UTF-8 字节数。普通汉字一般计 1，`😀` 计 2；变体选择符、连接符、组合音标分别计数。例如 `🛍️ Trading Plaza Is Here!` 为 26，`🛍 Trading Plaza Is Here!` 为 25。CLI 不会自动去空格、截断、规范化或删除 emoji；报错包含具体字段、当前长度／上限、超出数量及 `events rules` 提示。
+
+来源是 **2026-11-13 核对的 Roblox 官方 Creator Dashboard 前端表单规则**：常量模块将 title/subtitle/description 分别设置为 25/25/1000，表单将它们用于 `maxLength` 校验。来源链接与核对日期可在 `events rules` 中查看。这是离线规则快照，不是 Game Events API 在错误中返回的长度元数据；平台前端规则将来可能变化。
+
+CLI 创建与修改回执新增 `data.validation`：`scope=local-text`、计数方式、逐个已提交文本字段的 `length/maxLength/remaining`、规则来源及 `serverChecksIncluded=false`。未提供的 PATCH 字段不纳入计数，也不被替换。`--dry-run` 的状态为 `planned`，只表示本地输入校验和请求预览完成；不代表 Roblox 已接受、审核通过或账号具备业务访问权。
+
+服务端仍可能因审核、权限、名额、时间／Place 资格等拒绝输入。活动写入的 400 ProblemDetails 会显示经过凭证脱敏、控制字符清理和长度限制的诊断；若返回 `InvalidTitleOrDescriptionException`，提示查看规则并核实审核等服务端条件，不把该异常一律解释为超长，也不自动换文案或重试写入。

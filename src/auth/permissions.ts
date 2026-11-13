@@ -15,6 +15,7 @@ const requirements: Record<string, [string, PermissionTarget]> = {
   'legacy-group': ['Groups (Legacy)', 'none'], 'legacy-universe': ['Universes (Legacy)', 'none'],
   'legacy-asset': ['Assets (Legacy)', 'none'], universe: ['Universes', 'universe'],
   'universe.place': ['Universes / Places', 'universe'],
+  'universe.event': ['Game Events', 'universe'],
   'universe.user-restriction': ['User Restrictions', 'universe'],
   'universe.ordered-data-store.scope.entry': ['Ordered Data Stores', 'universe'],
   'universe-datastores.objects': ['Data Stores / Objects', 'universe-datastore'],
@@ -54,6 +55,10 @@ const features: PermissionFeature[] = [
   feature('places-list', '查询 Place 与人数上限', ['places list'], ['universe:read', 'universe.place:read']),
   feature('places-update', '修改 Place 人数上限', ['places update'], ['universe:read', 'universe.place:read', 'universe.place:write']),
   feature('servers-status', '预估服务器重启影响', ['servers status'], ['universe:read']),
+  feature('events-read', '查询游戏活动', ['events list', 'events get'], ['universe.event:read']),
+  feature('events-write', '创建、修改与删除游戏活动', ['events create', 'events update', 'events delete'], ['universe.event:read', 'universe.event:write'], ['修改、删除前读取原值；创建与修改后回读。不包含旧版更新通知。']),
+  feature('events-image', '上传活动图片', ['events upload-image'], ['asset:read', 'asset:write'], ['图片属于指定用户或群组；返回 mediaId 用于 --thumbnail，不代表审核通过或显示正常。']),
+  feature('events-image-read', '查询活动图片上传操作', ['events image-operation'], ['asset:read']),
   feature('servers-restart', '重启服务器', ['servers restart'], ['universe:write']),
   feature('restriction-get', '查询玩家封禁', ['ban-status'], ['universe.user-restriction:read']),
   feature('restriction-write', '封禁或解封玩家', ['ban', 'unban'], ['universe.user-restriction:write']),
@@ -66,7 +71,7 @@ const features: PermissionFeature[] = [
   feature('localization-write', '修改游戏标题和简介', ['localization write'], ['universe:read', 'legacy-universe:manage', 'universe.place:write'], ['仅修改其他语言时无需 universe.place:write；源语言通过根 Place 修改。']),
   feature('localization-table', '管理云端游戏内本地化表', ['localization enable', 'localization sync', 'localization import'], ['legacy-universe:manage'], ['本地 init/export/show 不需 Roblox 权限；DeepSeek 翻译另需独立 Key。']),
   feature('studio-publish-verify', '复核 Studio 覆盖发布版本', ['studio publish-as'], ['asset:read'], ['仅覆盖后的版本复核需要；此权限不会授权 Studio 发布。']),
-  feature('local', '本机及公开查询功能', ['auth permissions', 'universe list', 'player', 'cache clear', 'studio open', 'studio close', 'studio list', 'studio save', 'icon status', 'localization init', 'localization export', 'localization show'], [], ['本地缓存、玩家清单及 Studio 会话操作不需要 Roblox API Key。']),
+  feature('local', '本机及公开查询功能', ['auth permissions', 'universe list', 'player', 'cache clear', 'studio open', 'studio close', 'studio list', 'studio save', 'icon status', 'localization init', 'localization export', 'localization show', 'events categories', 'events rules'], [], ['本地缓存、玩家清单及 Studio 会话操作不需要 Roblox API Key。']),
 ];
 
 /** Returns independent copies so SDK consumers cannot mutate the built-in catalog. */
