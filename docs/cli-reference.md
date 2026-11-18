@@ -757,6 +757,25 @@ $env:RBX_LIVE_PLACES_UNIVERSE = '<测试 Universe ID>'
 npm run test:live:places
 ```
 
+## Place Social Slots
+
+```powershell
+rbx auth cookie set
+rbx places social-slots read --universe <UniverseId> --place <PlaceId> --json
+rbx places social-slots write --universe <UniverseId> --place <PlaceId> --mode disabled
+rbx places social-slots write --universe <UniverseId> --place <PlaceId> --mode automatic
+rbx places social-slots write --universe <UniverseId> --place <PlaceId> --mode custom --count 2
+rbx auth cookie clear
+```
+
+`auth cookie set` 在 Windows 交互终端隐藏输入，将 `.ROBLOSECURITY` 会话用当前用户的 DPAPI 保存到应用数据目录的 `cookie.dpapi`。会话所属账号需要拥有目标 Place 的管理权限；首次查询时由 Roblox 校验会话。失效时重新运行 `auth cookie set`。原有 `places list/update` 仍用 Open Cloud API Key。
+
+`read/write` 每次针对一个 Place，`--universe` 可用 ID 或本地精确游戏名。`disabled` 关闭社交预留席位，对应 Roblox API 的 `Empty`，用于让公开服尽量填满。`automatic` 由 Roblox 决定。`custom` 必须带正整数 `--count`，实际允许范围由 Roblox 校验。配置应用于新服务器，修改命令不会重启现有服务器。
+
+`write` 先校验 Place 归属并读取现值，只提交 Social Slots 字段，写后回读核对。JSON 返回 `before/requested/after/state`；原值已符合时返回 `verified` 和 `changed: false`。网络或回读异常导致结果待确认时退出码为 `3`，可用 `read` 检查配置。仅在 Roblox 明确拒绝首次 CSRF 校验时附带其返回令牌再提交一次。
+
+SDK 导出 `readPlaceSocialSlots(http, universeId, placeId)` 与 `writePlaceSocialSlots(http, universeId, placeId, settings)`，使用带 `robloxCookie` 的 `HttpClient`。读写使用 Roblox 的 [Develop Place 配置端点](https://create.roblox.com/docs/cloud/reference/features/places#develop_patch_v2_places__placeId_)。
+
 ## 开发者产品同步（Studio 开发者产品表 → 宇宙）
 
 以 Studio 的 `game.ServerStorage["项目文档"]["开发者产品"]`（ModuleScript）为唯一来源，单向同步到一个或多个宇宙的开发者产品；不从宇宙拉取、不回写 Studio。

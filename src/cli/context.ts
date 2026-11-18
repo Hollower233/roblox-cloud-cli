@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Command } from 'commander';
-import { CredentialStore } from '../auth/credentials.js';
+import { CredentialStore, robloxCookieCredential } from '../auth/credentials.js';
 import { AppError } from '../core/errors.js';
 import { resolveProfileUniverse } from '../profiles/copy.js';
 import { LocalStore, defaultHome } from '../storage/store.js';
@@ -11,7 +11,7 @@ import type { WriteReceipt } from '../cloud/common.js';
 
 export interface CommandContext {
   connection(): Promise<{ local: LocalStore; http: HttpClient }>;
-  universe(input: string): Promise<{ local: LocalStore; universeId: string; http: HttpClient }>;
+  universe(input: string, auth?: 'apiKey' | 'cookie'): Promise<{ local: LocalStore; universeId: string; http: HttpClient }>;
   output(data: unknown): void;
   receipt(result: WriteReceipt): void;
   signal: AbortSignal;
@@ -29,11 +29,14 @@ export function commandContext(program: Command, signal: AbortSignal): CommandCo
   return {
     signal,
     connection,
-    async universe(input) {
+    async universe(input, auth = 'apiKey') {
       const local = new LocalStore(resolve(program.opts().home ?? defaultHome())), config = await local.config();
       const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;
       const universeId = resolveProfileUniverse(input, catalog?.games);
-      return { local, universeId, http: new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal }) };
+      const credential = auth === 'cookie'
+        ? { robloxCookie: await new CredentialStore(local.home, robloxCookieCredential).get() }
+        : { apiKey: await new CredentialStore(local.home).get() };
+      return { local, universeId, http: new HttpClient({ ...credential, signal }) };
     },
     output(data) { emit(data, json(), JSON.stringify(data, null, 2).split('\n').map(clean).join('\n')); },
     receipt(result) {

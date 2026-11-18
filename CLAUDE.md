@@ -133,6 +133,13 @@
 - `update` 必须且只能选择 `--place <id>` 或 `--all`，`--max-players` 为正整数；仅更新 Cloud Place 的 `serverSize`，权限 `universe.place:write`。写前读原值、写后回读；批量逐项报告，失败退出码 3，不自动重试写入，不关闭 Studio 或重启服务器。
 - 离线：`tests/places.test.ts`；显式真实写验证：`scripts/places-smoke.ts`，环境变量 `RBX_LIVE_PLACES_UNIVERSE`，命令 `npm run test:live:places`。原值备份在应用数据目录 `place-backups/`，测试后恢复。
 
+## Place Social Slots
+
+- 配置读写与回读核对：`src/universes/social-slots.ts`；CLI：`src/cli/commands/places.ts`；SDK 导出：`src/index.ts`。
+- `places social-slots read/write --universe <id-or-name> --place <id>` 只针对一个 Place，核对 Develop API 返回的 Place 和 Universe ID。写入支持 `disabled`（API `Empty`）、`automatic`、`custom`（需 `--count`），只 PATCH Social Slots 字段，不重启服务器。
+- `auth cookie set/clear` 管理手动录入的会话，存于应用数据目录的 `cookie.dpapi`。Cookie 仅发送到 `develop.roblox.com/v2/places/{placeId}`；只对确认拒绝的 CSRF 挑战应答一次。Key 权限诊断不验证会话。
+- 离线验证：`tests/social-slots.test.ts`。
+
 ## 服务器重启
 
 - 重启模块：`src/universes/restart.ts`；命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。

@@ -19,7 +19,7 @@ export function registerAuthPermissions(auth: Command, context: { store(): Local
     .action((options: { for?: string }) => {
       const features = permissionFeatures(options.for);
       const human = features.map(item => `${item.id} — ${item.description}\n  命令：${item.commands.map(command => `rbx ${command}`).join(' / ')}\n` +
-        (item.requirements.map(row => `  ${row.scope} | API 系统：${row.system} | 操作：${row.operation} | 范围：${targetLabels[row.target]}`).join('\n') || '  无需 Roblox API 权限。') +
+        (item.requirements.map(row => `  ${row.scope} | API 系统：${row.system} | 操作：${row.operation} | 范围：${targetLabels[row.target]}`).join('\n') || '  无需 Roblox API Key 权限。') +
         item.notes.map(note => `\n  注：${note}`).join('')).join('\n\n');
       emit({ features, dashboard, disclaimer }, context.json(), `${human}\n\n配置页面：${dashboard}\n${disclaimer}\nAPI 系统名称为说明性分组，Dashboard 的显示名称可能不同。`);
     });

@@ -7,7 +7,7 @@ import { AppError } from '../core/errors.js';
 // Windows DPAPI binds encrypted key material to the current OS user. Plaintext is
 // sent on stdin, never in process arguments, logs, config files, or shell history.
 async function protect(value: string, decrypt: boolean): Promise<string> {
-  if (process.platform !== 'win32') throw new AppError('CREDENTIAL_STORE_UNAVAILABLE', 'Persistent key storage currently supports Windows. Set ROBLOX_API_KEY on other platforms.');
+  if (process.platform !== 'win32') throw new AppError('CREDENTIAL_STORE_UNAVAILABLE', 'Persistent credential storage currently supports Windows.');
   const setup = "[void][Reflection.Assembly]::LoadWithPartialName('System.Security'); $s=[Console]::In.ReadToEnd(); ";
   const script = setup + (decrypt
     ? "$b=[Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($s),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser); [Console]::Write([Text.Encoding]::UTF8.GetString($b))"
@@ -27,23 +27,37 @@ export function validateKey(value: string): string {
   if (!key || /\s/.test(key)) throw new AppError('AUTH_INVALID', 'Expected a non-empty API key without whitespace.');
   return key;
 }
-export interface CredentialSlot { file: string; env: string; setCommand: string }
+export function validateRobloxCookie(value: string): string {
+  const cookie = value.trim().replace(/^\.ROBLOSECURITY=/, '');
+  if (!/^[\x21\x23-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]+$/.test(cookie)) {
+    throw new AppError('AUTH_INVALID', 'Expected one Roblox .ROBLOSECURITY cookie value.');
+  }
+  return cookie;
+}
+export interface CredentialSlot { file: string; env?: string; setCommand: string; validate?: (value: string) => string }
 export const robloxCredential: CredentialSlot = { file: 'credential.dpapi', env: 'ROBLOX_API_KEY', setCommand: 'rbx auth set' };
 export const deepseekCredential: CredentialSlot = { file: 'deepseek.dpapi', env: 'DEEPSEEK_API_KEY', setCommand: 'rbx deepseek auth set' };
+export const robloxCookieCredential: CredentialSlot = {
+  file: 'cookie.dpapi', setCommand: 'rbx auth cookie set', validate: validateRobloxCookie,
+};
 export class CredentialStore {
   constructor(private home: string, private slot: CredentialSlot = robloxCredential) {}
   async get(): Promise<string> {
-    const env = process.env[this.slot.env];
-    if (env !== undefined) return validateKey(env);
-    try { return validateKey(await protect(await readFile(join(this.home, this.slot.file), 'utf8'), true)); }
+    const validate = this.slot.validate ?? validateKey;
+    const env = this.slot.env === undefined ? undefined : process.env[this.slot.env];
+    if (env !== undefined) return validate(env);
+    try { return validate(await protect(await readFile(join(this.home, this.slot.file), 'utf8'), true)); }
     catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError('AUTH_REQUIRED', `Run ${this.slot.setCommand} or set ${this.slot.env}.`);
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+        const alternative = this.slot.env ? ` or set ${this.slot.env}` : '';
+        throw new AppError('AUTH_REQUIRED', `Run ${this.slot.setCommand}${alternative}.`);
+      }
       if (e instanceof AppError) throw e;
       throw new AppError('STORAGE_ERROR', 'Cannot read the credential file.');
     }
   }
   async set(key: string): Promise<void> {
-    const encrypted = await protect(validateKey(key), false);
+    const encrypted = await protect((this.slot.validate ?? validateKey)(key), false);
     await mkdir(this.home, { recursive: true, mode: 0o700 });
     const temporary = join(this.home, `${randomUUID()}.tmp`);
     try { await writeFile(temporary, encrypted, { mode: 0o600, flag: 'wx' }); await rename(temporary, join(this.home, this.slot.file)); }

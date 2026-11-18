@@ -23,7 +23,7 @@ import { copyProfiles, resolveProfilePlayers, resolveProfileUniverse } from '../
 import { clearProfiles } from '../profiles/clear.js';
 import { profileHistory } from '../profiles/history.js';
 import { UserRestrictions, banBody } from '../moderation/restrictions.js';
-import { CredentialStore, validateKey } from '../auth/credentials.js';
+import { CredentialStore, robloxCookieCredential, validateKey } from '../auth/credentials.js';
 import { AppError, errorInfo, exitCode, id } from '../core/errors.js';
 import { HttpClient } from '../transport/http-client.js';
 import { RobloxApi } from '../roblox/api.js';
@@ -154,6 +154,19 @@ localization.command('write <universe>').description('Write selected game-info f
 
 const auth = program.command('auth').description('Configure and validate API credentials');
 registerAuthPermissions(auth, { store, json, signal: abort.signal });
+const cookieAuth = auth.command('cookie').description('Manage the Roblox session cookie used by Social Slots');
+cookieAuth.command('set').description('Enter and encrypt a Roblox session cookie (Windows DPAPI)').action(async () => {
+  if (!process.stdin.isTTY || !process.stderr.isTTY) throw new AppError('ARGUMENT_ERROR', 'Run rbx auth cookie set in an interactive terminal.');
+  const cookie = await password({ message: 'Roblox .ROBLOSECURITY', mask: '*' }, { output: process.stderr, signal: abort.signal });
+  const local = store();
+  await local.locked(() => new CredentialStore(local.home, robloxCookieCredential).set(cookie));
+  emit({ storage: 'Windows DPAPI' }, json(), 'Saved the encrypted Roblox session cookie.');
+});
+cookieAuth.command('clear').description('Remove the saved Roblox session cookie').action(async () => {
+  const local = store();
+  await local.locked(() => new CredentialStore(local.home, robloxCookieCredential).clear());
+  emit({ cleared: true }, json(), 'Removed the saved Roblox session cookie.');
+});
 auth.command('set').description('Validate and securely save a key (Windows DPAPI)')
   .option('--key-file <path>', 'Read an existing local key file instead of prompting')
   .action(async options => {

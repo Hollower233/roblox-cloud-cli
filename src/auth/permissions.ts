@@ -54,6 +54,8 @@ const features: PermissionFeature[] = [
   feature('experiments-write', '创建和修改实验', ['experiments create', 'experiments update', 'experiments start', 'experiments schedule', 'experiments complete'], rw),
   feature('places-list', '查询 Place 与人数上限', ['places list'], ['universe:read', 'universe.place:read']),
   feature('places-update', '修改 Place 人数上限', ['places update'], ['universe:read', 'universe.place:read', 'universe.place:write']),
+  feature('places-social-slots', '查询和修改 Place 的 Social Slots', ['places social-slots read', 'places social-slots write'], [],
+    ['通过 rbx auth cookie set 配置有目标 Place 管理权限的 Roblox 会话。Key 检查不验证 Cookie 或账号的 Place 权限。']),
   feature('servers-status', '预估服务器重启影响', ['servers status'], ['universe:read']),
   feature('events-read', '查询游戏活动', ['events list', 'events get'], ['universe.event:read']),
   feature('events-write', '创建、修改与删除游戏活动', ['events create', 'events update', 'events delete'], ['universe.event:read', 'universe.event:write'], ['修改、删除前读取原值；创建与修改后回读。不包含旧版更新通知。']),

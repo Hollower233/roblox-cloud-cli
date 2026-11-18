@@ -1,9 +1,10 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { AppError } from '../core/errors.js';
+import { validateRobloxCookie } from '../auth/credentials.js';
 
 const hosts = new Set(['apis.roblox.com', 'games.roblox.com', 'groups.roblox.com', 'users.roblox.com', 'develop.roblox.com','locale.roblox.com', 'gameinternationalization.roblox.com']);
 export interface HttpOptions {
-  apiKey?: string; fetch?: typeof fetch; intervalMs?: number; timeoutMs?: number;
+  apiKey?: string; robloxCookie?: string; fetch?: typeof fetch; intervalMs?: number; timeoutMs?: number;
   retries?: number; signal?: AbortSignal; sleep?: (ms: number) => Promise<void>;
 }
 export class HttpClient {
@@ -25,7 +26,7 @@ export class HttpClient {
     this.queues.set(host, task);
     await task;
   }
-  async request<T>(url: string, options: { auth?: boolean; method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; rawBody?: string; form?: FormData; headers?: Record<string, string>; rawResponse?: boolean; validationDetails?: boolean } = {}): Promise<T> {
+  async request<T>(url: string, options: { auth?: boolean; cookieAuth?: boolean; method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; rawBody?: string; form?: FormData; headers?: Record<string, string>; rawResponse?: boolean; validationDetails?: boolean } = {}): Promise<T> {
     const target = new URL(url);
     if (target.protocol !== 'https:' || !hosts.has(target.host) || target.username || target.password) throw new AppError('ARGUMENT_ERROR', 'Unsupported Roblox API destination.');
     if (options.auth && target.host !== 'apis.roblox.com') throw new AppError('ARGUMENT_ERROR', 'API keys may only be sent to apis.roblox.com.');
@@ -33,11 +34,21 @@ export class HttpClient {
     const hasBody = options.body !== undefined || options.rawBody !== undefined || options.form !== undefined;
     const method = options.method ?? (hasBody ? 'POST' : 'GET');
     if (method === 'GET' && hasBody) throw new AppError('ARGUMENT_ERROR', 'GET requests cannot carry a body.');
+    let cookie: string | undefined;
+    if (options.cookieAuth) {
+      if (target.host !== 'develop.roblox.com' || !/^\/v2\/places\/[1-9]\d*$/.test(target.pathname)
+        || target.search || !['GET', 'PATCH'].includes(method) || options.auth || options.rawResponse || options.validationDetails) {
+        throw new AppError('ARGUMENT_ERROR', 'Cookie authentication is limited to the Develop Place configuration endpoint.');
+      }
+      if (this.options.robloxCookie === undefined) throw new AppError('AUTH_REQUIRED', 'Run rbx auth cookie set.');
+      cookie = `.ROBLOSECURITY=${validateRobloxCookie(this.options.robloxCookie)}`;
+    }
     // Only idempotent GETs are retried; writes may already have taken effect.
     const retryable = method === 'GET';
     for (const name of Object.keys(options.headers ?? {})) {
       if (!['content-md5', 'roblox-entry-attributes', 'roblox-entry-userids'].includes(name)) throw new AppError('ARGUMENT_ERROR', 'Unsupported request header.');
     }
+    let csrfToken: string | undefined;
     for (let attempt = 0; ; attempt++) {
       try {
         this.options.signal?.throwIfAborted();
@@ -46,11 +57,24 @@ export class HttpClient {
         const signal = this.options.signal ? AbortSignal.any([timeout, this.options.signal]) : timeout;
         const response = await this.fetcher(target, {
           method,
-          headers: { Accept: 'application/json', ...options.headers, ...(options.auth ? { 'x-api-key': this.options.apiKey! } : {}), ...(hasBody && !options.form ? { 'Content-Type': 'application/json' } : {}) },
+          headers: {
+            Accept: 'application/json', ...options.headers,
+            ...(options.auth ? { 'x-api-key': this.options.apiKey! } : {}),
+            ...(cookie ? { Cookie: cookie } : {}),
+            ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+            ...(hasBody && !options.form ? { 'Content-Type': 'application/json' } : {}),
+          },
           body: options.form ?? options.rawBody ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
           redirect: 'error', signal,
         });
         if (!response.ok) {
+          const challenge = cookie && method === 'PATCH' && response.status === 403 && !csrfToken
+            ? response.headers.get('x-csrf-token') : null;
+          if (challenge && await isCsrfChallenge(response)) {
+            // Roblox rejected the first request before applying it. Answer the challenge once.
+            csrfToken = challenge;
+            continue;
+          }
           // Response bodies stay hidden by default. Event validation can opt into bounded,
           // credential-redacted ProblemDetails text; never include request headers.
           let validation = '';
@@ -68,7 +92,7 @@ export class HttpClient {
               detail = detail.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, ' ').slice(0, 600);
               if (detail) validation = ` ${detail}`;
             } catch { /* Keep the generic error if this is not ProblemDetails JSON. */ }
-          } else await response.body?.cancel();
+          } else if (!response.bodyUsed) await response.body?.cancel();
           if (retryable && [429, 500, 502, 503, 504].includes(response.status) && attempt < (this.options.retries ?? 3)) {
             const header = response.headers.get('retry-after');
             const requested = header === null ? NaN : /^\d+(\.\d+)?$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now();
@@ -77,6 +101,7 @@ export class HttpClient {
             continue;
           }
           const code = response.status === 401 ? 'AUTH_INVALID' : response.status === 403 ? 'FORBIDDEN' : 'HTTP_ERROR';
+          if (cookie && response.status === 401) throw new AppError(code, 'Roblox rejected the session cookie. Run rbx auth cookie set again.', 401);
           throw new AppError(code, `Roblox ${target.pathname} returned HTTP ${response.status}.${validation}`, response.status);
         }
         if (options.rawResponse) return { status: response.status, text: await response.text(), headers: Object.fromEntries(response.headers) } as T;
@@ -90,5 +115,16 @@ export class HttpClient {
         throw new AppError('NETWORK_ERROR', 'Could not connect to Roblox.');
       }
     }
+  }
+}
+
+async function isCsrfChallenge(response: Response): Promise<boolean> {
+  try {
+    const body = await response.json() as { errors?: { code?: number; message?: string }[] };
+    return Array.isArray(body?.errors) && body.errors.some(error =>
+      error?.code === 9001 || (error?.code === 0 && typeof error.message === 'string'
+        && /^(?:(?:[xc]srf )?token validation failed|[xc]srf token (?:is )?invalid)\.?$/i.test(error.message.trim())));
+  } catch {
+    return false;
   }
 }
