@@ -97,6 +97,19 @@ $lines = Wait-Text $dlg 'Overwrite or add a new place' 15000 'page2'
 if (-not (Has $lines $Experience)) { [PA.W]::Close($dlg); throw "Page 2 is not for '$Experience': " + (($lines | ForEach-Object Text) -join ' | ') }
 Log "Experience: $Experience"
 
+function Test-PlaceRadio($bitmap, [int]$x, [int]$y) {
+  $inner = $bitmap.GetPixel($x, $y).GetBrightness()
+  # The unselected radio has a thin outline on both sides of its center.
+  foreach ($side in -1, 1) {
+    $edge = 0.0
+    foreach ($distance in 10, 11, 12, 13) {
+      $edge = [math]::Max($edge, $bitmap.GetPixel($x + $side * (S $distance), $y).GetBrightness())
+    }
+    if ($edge - $inner -lt 0.04) { return $false }
+  }
+  return $true
+}
+
 # ---------------- choose place ----------------
 $script:Stage = 'choose-place'
 $rowArea = { $_.X -gt (S 150) -and $_.X -lt (S 700) -and $_.Y -gt (S 300) -and $_.Y -lt (S 820) }
@@ -106,9 +119,28 @@ if ($NewPlace) {
   $row = Find-One $lines $Place $rowArea 'place'
   if (-not $row) {
     $ps = $lines | Where-Object { $_.X -gt (S 700) -and $_.Y -lt (S 160) -and $_.N.Contains('search') } | Select-Object -First 1
-    if ($ps) { [PA.W]::Click($dlg, $ps.CX, $ps.CY); Start-Sleep -Milliseconds 300; [PA.W]::Type($dlg, $Place); Start-Sleep -Milliseconds 1200
-      $lines = @(Read-Window $dlg 'place-search')
-      $row = Find-One $lines $Place $rowArea 'place' }
+    if (-not $ps) { throw 'Place search box not found.' }
+    [PA.W]::Click($dlg, $ps.CX, $ps.CY)
+    Start-Sleep -Milliseconds 300
+    [PA.W]::Type($dlg, $Place)
+    Start-Sleep -Milliseconds 1200
+
+    # The permanent "Add as a new place" row is centered at y=218.
+    # The first existing Place after filtering is one row (100 units) below it.
+    $firstPlaceY = S 318
+    $placeOffset = [PA.W]::ClientOffset($dlg)
+    $placeSearchImage = [PA.W]::Snap($dlg)
+    try {
+      if ($DebugDir) { $script:Shot++; $placeSearchImage.Save((Join-Path $DebugDir ('{0:D2}-place-search.png' -f $script:Shot))) }
+      $radioX = (S 37) + $placeOffset[0]
+      if ((Test-PlaceRadio $placeSearchImage $radioX ((S 218) + $placeOffset[1])) -and
+          (Test-PlaceRadio $placeSearchImage $radioX ($firstPlaceY + $placeOffset[1]))) {
+        $row = [pscustomobject]@{ Text = "first search result for '$Place'"; CY = $firstPlaceY }
+      }
+    } finally {
+      $placeSearchImage.Dispose()
+    }
+    if (-not $row) { throw "Place search for '$Place' in '$Experience' returned no selectable first result." }
   }
 }
 if (-not $row) { [PA.W]::Close($dlg); throw "Place '$Place' not found in '$Experience'." }

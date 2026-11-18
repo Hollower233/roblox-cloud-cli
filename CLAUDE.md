@@ -168,6 +168,7 @@
 
 - 目标解析、查重、发布编排与版本复核：`src/studio/publish-as.ts`；界面自动化脚本：`src/studio/publish-as.ps1`，共享助手 `src/studio/studio-ui.ps1`，运行器 `src/studio/ui-script.ts`（脚本均仅 ASCII，参数为 base64 JSON，stdout 输出一行 `@@RESULT {json}`，进度写 stderr），构建时复制全部 `.ps1` 到 `dist/studio/`。
 - 命令 `studio publish-as --to <game> (--place <place> | --new) [--pid] [--dry-run] [--debug-dir]`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅 Windows、英文 Studio 界面。
+- 覆盖目标未从初始列表识别到时，输入 Place 名筛选，通过单选框检测并选择第一条已有 Place。跳过固定的新建行，未检测到可选结果就停止。
 - 脚本注意：PowerShell 变量名不区分大小写，新增变量不得与已有变量（含 `$script:` 作用域）同名。
 - 复核：覆盖用 Assets API 版本号（`asset:read`），新建用 Place 目录新增 ID；点击按钮前失败必未发布。
 - 离线验证：`tests/studio-publish-as.test.ts`；真实界面只用 `--dry-run` 验证，真实发布需用户明确要求。

@@ -708,6 +708,9 @@ rbx studio publish-as --to "Example Development" --place "<PlaceId>" --json
 rbx studio publish-as --to "Example Sandbox" --new --pid "<EditorPid>" --json
 ```
 
+- 界面匹配自动去掉名称中的括号副标题，例如 `Ball VS Ball [RANKED]` 使用 `Ball VS Ball` 搜索及匹配；目标与版本复核仍使用原 Universe/Place ID。同一 Owner 下主关键词对应多个宇宙时拒绝；Place 主关键词不唯一时保留完整名。
+- 初始列表找不到要覆盖的 Place 时，CLI 输入名称筛选，检查固定新建行下方是否有已存在 Place 的单选框。有就选第一条，无可选结果则停止。选中后检查单选框和覆盖按钮是否已启用。
+
 - `--to`：Universe ID 或本地目录中的精确游戏名；`--place`：Place ID 或精确 Place 名；`--new`：新建 Place。两者必选其一。
 - `--pid`：源 Studio 编辑进程，多个会话时必填（见 `studio list`）。`--debug-dir` 保存每一步截图。
 - 目标先由本地目录（群组名、游戏名）和公开 Place 目录换算成对话框显示的文字；个人游戏对应 `My Experiences`。同一 Owner 下同名游戏、同一游戏内同名 Place 在操作界面前直接拒绝（退出码 2），因为对话框无法区分。

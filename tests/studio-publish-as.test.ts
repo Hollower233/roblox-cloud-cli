@@ -100,6 +100,25 @@ test('dry run makes no version calls and reports nothing published', async () =>
   const { result } = await publishAs(system, client, session, target, { dryRun: true, versions: client });
   assert.equal(calls[0]!.dryRun, true); assert.equal(result.published, false); assert.equal(result.verification.state, 'skipped'); assert.deepEqual(hits, []);
 });
+
+test('dialog matching ignores changing subtitles while verification retains the requested place ID', async () => {
+  const arena = game('20', 'Ball VS Ball [RANKED]');
+  const directory = [{ placeId: '101', name: 'Ball VS Ball [UPDATE 15]' }, { placeId: '102', name: 'Trade' }];
+  const { target } = planPublishTarget(arena, [arena], directory, ME, { value: '101' });
+  const { system, calls } = fakeSystem({});
+  const { client } = fakeHttp({ [versionsUrl]: [version(4), version(5)] });
+  const { result } = await publishAs(system, client, session, target, { versions: client });
+  assert.equal(calls[0]!.experience, 'Ball VS Ball');
+  assert.equal(calls[0]!.search, 'Ball VS Ball');
+  assert.equal(calls[0]!.place, 'Ball VS Ball');
+  assert.equal(result.target.place!.placeId, '101');
+  assert.equal(result.verification.state, 'verified');
+  assert.throws(() => planPublishTarget(arena, [arena, game('21', 'Ball VS Ball [TEST]')], directory, ME, { value: '101' }), /Ambiguous experience keyword/);
+  const ambiguous = planPublishTarget(arena, [arena], [...directory, { placeId: '103', name: 'Ball VS Ball [TEST]' }], ME, { value: '101' }).target;
+  const second = fakeSystem({ stage: 'dry-run', clicked: false });
+  await publishAs(second.system, client, session, ambiguous, { dryRun: true });
+  assert.equal(second.calls[0]!.place, 'Ball VS Ball [UPDATE 15]');
+});
 test('a UI failure before the click is an error that says nothing was published', async () => {
   const { target } = planPublishTarget(games[0]!, games, places, ME, { value: 'Market' });
   const { system } = fakeSystem({ ok: false, stage: 'choose-group', clicked: false, message: 'Group not found' });

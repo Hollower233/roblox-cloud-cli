@@ -57,6 +57,14 @@ export function searchTerm(name: string): string {
   return best;
 }
 
+/** Ignore changeable bracket subtitles only when the remaining label uniquely identifies this target. */
+function dialogKeyword(name: string, others: string[]): string {
+  const base = name.replace(/\[[^\]]*\]|\([^)]*\)|【[^】]*】|（[^）]*）/gu, ' ').replace(/\s+/g, ' ').trim();
+  const key = normalizeLabel(base);
+  if (!key || others.some(other => normalizeLabel(other).includes(key))) return name;
+  return base;
+}
+
 /** Pick the source edit session: an explicit PID, else the only open one. */
 export function pickSession(sessions: StudioProcess[], pid?: string): StudioProcess {
   if (pid) {
@@ -101,6 +109,9 @@ export function planPublishTarget(game: Game, games: Game[], places: PlaceEntry[
   if (twins.length) {
     throw new AppError('ARGUMENT_ERROR', `The Publish dialog cannot tell ${game.universeId} apart from ${twins.map(g => g.universeId).join(', ')}: same name "${experience}" under ${game.owner.name}. Rename one first.`);
   }
+  const keyword = normalizeLabel(dialogKeyword(experience, []));
+  const keywordTwins = games.filter(g => g.universeId !== game.universeId && g.owner.type === game.owner.type && g.owner.id === game.owner.id && normalizeLabel(g.name).includes(keyword));
+  if (keywordTwins.length) throw new AppError('ARGUMENT_ERROR', `Ambiguous experience keyword: ${dialogKeyword(experience, [])}. Universes: ${game.universeId}, ${keywordTwins.map(g => g.universeId).join(', ')}.`);
   if (game.owner.type === 'User') warnings.push({ code: 'PERSONAL_PRIVATE_DISCOVERY_UNAVAILABLE', message: 'Personal private games are not in the catalog, so a same-name private game would only be caught on screen.', resource: game.universeId });
   let chosen: PlaceEntry | undefined;
   if (place.value) {
@@ -179,9 +190,11 @@ export async function publishAs(system: PublishAsSystem, http: HttpClient, sessi
     catch (error) { warnings.push({ code: 'PUBLISH_VERIFY_UNAVAILABLE', message: `Cannot read place versions before publishing: ${error instanceof Error ? error.message : 'unknown error'}`, resource: target.place.placeId }); }
   }
   if (options.signal?.aborted) throw new AppError('CANCELLED', 'Operation cancelled.');
+  const experienceKeyword = dialogKeyword(target.experience, []);
+  const placeKeyword = target.place ? dialogKeyword(target.place.name, target.places.filter(p => p.placeId !== target.place!.placeId).map(p => p.name)) : null;
   const ui = await system.runUi({
-    pid: session.pid, group: target.ownerLabel, experience: target.experience, search: target.search,
-    place: target.place?.name ?? null, newPlace: target.newPlace, dryRun, ...(options.debugDir ? { debugDir: options.debugDir } : {}),
+    pid: session.pid, group: target.ownerLabel, experience: experienceKeyword, search: searchTerm(experienceKeyword),
+    place: placeKeyword, newPlace: target.newPlace, dryRun, ...(options.debugDir ? { debugDir: options.debugDir } : {}),
   }, progress);
   const { ok, ...uiInfo } = ui;
   const base = {
