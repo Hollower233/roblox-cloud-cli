@@ -33,6 +33,7 @@ test('only edit sessions are parsed; Team Test servers and clients are ignored',
   assert.equal(parseStudioProcess({ pid: 2, commandLine: 'RobloxStudioBeta.exe -task StartServer -placeId 11', title: '' }), null);
   assert.equal(parseStudioProcess({ pid: 3, commandLine: 'RobloxStudioBeta.exe -task StartClient -placeId 11', title: '' }), null);
   assert.equal(parseStudioProcess({ pid: 4, commandLine: 'RobloxStudioBeta.exe', title: 'Roblox Studio' }), null);
+  assert.equal(parseStudioProcess({ pid: 5, commandLine: '"C:\\x\\RobloxStudioBeta_INTERNAL.exe" -task EditPlace -placeId 11 -universeId 22', title: 'A - Roblox Studio' })?.internal, true);
 });
 test('the newest Studio build is chosen and non-Windows is rejected', async () => {
   assert.equal(await findStudioExecutable(fakeSystem().system), 'C:\\L\\new\\RobloxStudioBeta.exe');
@@ -55,6 +56,7 @@ test('ready titles accept the Internal suffix', () => {
   assert.equal(isReadyTitle('Example Test - Roblox Studio'), true);
   assert.equal(isReadyTitle('Example Test - Roblox Studio [Internal]'), true);
   assert.equal(isReadyTitle('Roblox Studio'), false);
+  assert.equal(isReadyTitle('Place1 - Roblox Studio'), false);
 });
 test('launch passes EditPlace arguments and waits for the loaded title, following PID hand-off', async () => {
   const { system, launched } = fakeSystem({ rows: [[], [edit(77, '100', 'Roblox Studio')], [edit(77, '100', 'Example Test - Roblox Studio')]] });

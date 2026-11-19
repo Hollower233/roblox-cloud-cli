@@ -29,8 +29,21 @@ function peWithInternalHelper() {
   const marker = '[Internal]\0';
   data.write(marker, rdataRaw);
   const helperOff = textRaw;
-  Buffer.from('803daa3e8f0a0074', 'hex').copy(data, helperOff);
-  data[helperOff + 8] = 0xc3;
+  const flag1Va = imageBase + BigInt(rdataRva + 0x20), flag2Va = imageBase + BigInt(rdataRva + 0x21);
+  const cmp = (off: number, target: bigint) => {
+    const va = imageBase + BigInt(textRva + (off - textRaw));
+    data[off] = 0x80; data[off + 1] = 0x3d;
+    data.writeInt32LE(Number(target - (va + 7n)), off + 2);
+    data[off + 6] = 0;
+  };
+  cmp(helperOff, flag1Va); data[helperOff + 7] = 0x74; data[helperOff + 8] = 0x0c;
+  cmp(helperOff + 9, flag2Va); data[helperOff + 16] = 0x74; data[helperOff + 17] = 0x03;
+  Buffer.from('b001c330c0c3', 'hex').copy(data, helperOff + 18);
+  const guardOff = helperOff + 0x100;
+  Buffer.from('4883ec48', 'hex').copy(data, guardOff);
+  cmp(guardOff + 4, flag1Va); data[guardOff + 11] = 0x74; data[guardOff + 12] = 0x0d;
+  cmp(guardOff + 13, flag2Va); data[guardOff + 20] = 0x74; data[guardOff + 21] = 0x04;
+  Buffer.from('4883c448c3', 'hex').copy(data, guardOff + 22);
   const callOff = textRaw + 0x20;
   const helperVa = imageBase + BigInt(textRva + (helperOff - textRaw));
   const callVa = imageBase + BigInt(textRva + (callOff - textRaw));
@@ -41,16 +54,18 @@ function peWithInternalHelper() {
   const markerVa = imageBase + BigInt(rdataRva + (rdataRaw - rdataRaw));
   data[leaOff] = 0x48; data[leaOff + 1] = 0x8d; data[leaOff + 2] = 0x15;
   data.writeInt32LE(Number(markerVa - (leaVa + 7n)), leaOff + 3);
-  return { data, helperOff };
+  return { data, helperOff, guardOff };
 }
 
-test('the Internal helper is found from the [Internal] title load and rewritten in place', () => {
-  const { data, helperOff } = peWithInternalHelper();
+test('the Internal helper and its retail guard are found and rewritten in place', () => {
+  const { data, helperOff, guardOff } = peWithInternalHelper();
   const plan = planInternalPatch(data);
   assert.equal(plan.fileOffset, helperOff);
-  assert.equal(plan.originalBytes, '803daa3e8f0a0074');
+  assert.equal(plan.guardFileOffset, guardOff);
+  assert.equal(plan.guardOriginalBytes, '4883ec48');
   const patched = applyInternalPatch(data, plan);
   assert.equal(patched.subarray(helperOff, helperOff + 8).toString('hex'), 'b0019090909090c3');
+  assert.equal(patched.subarray(guardOff, guardOff + 4).toString('hex'), 'c3909090');
   assert.notEqual(patched, data);
 });
 
@@ -62,11 +77,21 @@ test('a missing Internal marker is a hard patch failure', () => {
 
 test('inspect reports the helper bytes when the prologue no longer matches', () => {
   const { data, helperOff } = peWithInternalHelper();
+  const expected = Buffer.from(data.subarray(helperOff, helperOff + 8));
+  expected[7] = 0x0f;
   data[helperOff + 7] = 0x0f;
   const inspection = inspectInternalPatch(data);
   assert.equal(inspection.ok, false);
   assert.equal(inspection.helperOffset, helperOff);
-  assert.equal(inspection.helperBytes, '803daa3e8f0a000f');
+  assert.equal(inspection.helperBytes, expected.toString('hex'));
   assert.equal(inspection.helperLooksKnown, false);
   assert.equal(inspection.leaOffset !== undefined, true);
+});
+
+test('a missing retail guard is a hard patch failure', () => {
+  const { data, guardOff } = peWithInternalHelper();
+  data[guardOff + 26] = 0x90;
+  const inspection = inspectInternalPatch(data);
+  assert.equal(inspection.ok, false);
+  assert.match(inspection.reason ?? '', /retail-build guard/);
 });

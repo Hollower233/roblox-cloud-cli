@@ -570,7 +570,7 @@ studio.command('patch').description('Create or reuse RobloxStudioBeta_INTERNAL.e
         process.exitCode = 1;
         return;
       }
-      emit(data, json(), `定位成功\n${stock}\nfileOffset ${inspection.plan?.fileOffset}\noriginalBytes ${inspection.plan?.originalBytes}\n源 SHA-256 ${data.sourceSha256}`);
+      emit(data, json(), `定位成功\n${stock}\nhelper fileOffset ${inspection.plan?.fileOffset}\nhelper originalBytes ${inspection.plan?.originalBytes}\nguard fileOffset ${inspection.plan?.guardFileOffset}\nguard originalBytes ${inspection.plan?.guardOriginalBytes}\n源 SHA-256 ${data.sourceSha256}`);
       return;
     }
     const result = await ensureInternalStudio(stock);

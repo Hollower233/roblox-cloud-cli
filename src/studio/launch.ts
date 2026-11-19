@@ -7,7 +7,7 @@ import type { HttpClient } from '../transport/http-client.js';
 import type { Game } from '../universes/models.js';
 
 /** One running Studio edit session, parsed from its process command line. */
-export interface StudioProcess { pid: number; placeId: string; universeId?: string; title?: string }
+export interface StudioProcess { pid: number; placeId: string; universeId?: string; title?: string; internal?: boolean }
 export interface StudioTarget { placeId: string; universeId: string; name?: string }
 export interface OpenResult extends StudioTarget {
   pid: number;
@@ -47,11 +47,12 @@ export function parseStudioProcess(row: { pid: number; commandLine: string; titl
   const placeId = argValue(row.commandLine, 'placeId');
   if (!placeId || !/^\d+$/.test(placeId)) return null;
   const universeId = argValue(row.commandLine, 'universeId');
-  return { pid: row.pid, placeId, ...(universeId && /^\d+$/.test(universeId) ? { universeId } : {}), ...(row.title ? { title: row.title } : {}) };
+  const internal = /(?:^|[\\/\s"])(?:RobloxStudioBeta_INTERNAL\.exe)(?:"|\s|$)/i.test(row.commandLine);
+  return { pid: row.pid, placeId, ...(universeId && /^\d+$/.test(universeId) ? { universeId } : {}), ...(row.title ? { title: row.title } : {}), ...(internal ? { internal: true } : {}) };
 }
 /** Loaded editor titles end with "Roblox Studio", with an optional `[Internal]` suffix. */
 export function isReadyTitle(title: string | undefined): boolean {
-  return Boolean(title && / - Roblox Studio(?:\s*\[Internal\])?$/.test(title));
+  return Boolean(title && !/^Place1\s+- Roblox Studio/i.test(title) && / - Roblox Studio(?:\s*\[Internal\])?$/.test(title));
 }
 export function isInternalTitle(title: string | undefined): boolean {
   return Boolean(title && /\[Internal\]/i.test(title));
@@ -122,7 +123,7 @@ export async function openStudio(system: StudioSystem, target: StudioTarget, opt
   const wantInternal = options.stock !== true;
   const existing = (await listStudioSessions(system)).find(p => p.placeId === target.placeId);
   if (existing) {
-    const alreadyInternal = isInternalTitle(existing.title);
+    const alreadyInternal = existing.internal === true || isInternalTitle(existing.title);
     if (!wantInternal || alreadyInternal) {
       await system.focus(existing.pid).catch(() => undefined);
       return { ...target, pid: existing.pid, alreadyOpen: true, ready: isReadyTitle(existing.title), internal: alreadyInternal, ...(existing.title ? { title: existing.title } : {}), elapsedMs: system.now() - started };

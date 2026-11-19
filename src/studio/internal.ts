@@ -13,6 +13,8 @@ function isInternalHelper(bytes: Buffer): boolean {
 }
 /** mov al,1 / nop*5 / ret — always return Internal=true. */
 const PATCHED = Buffer.from('b0019090909090c3', 'hex');
+/** ret / nop*3 — skip the retail-build guard that throws after Internal-only paths are enabled. */
+const GUARD_PATCHED = Buffer.from('c3909090', 'hex');
 
 export interface PeSection {
   name: string;
@@ -30,6 +32,10 @@ export interface InternalPatchPlan {
   fileOffset: number;
   originalBytes: string;
   patchedBytes: string;
+  guardRva: number;
+  guardFileOffset: number;
+  guardOriginalBytes: string;
+  guardPatchedBytes: string;
 }
 export interface InternalPatchInspection {
   ok: boolean;
@@ -41,6 +47,9 @@ export interface InternalPatchInspection {
   helperOffset?: number;
   helperBytes?: string;
   helperLooksKnown?: boolean;
+  guardOffset?: number;
+  guardBytes?: string;
+  guardLooksKnown?: boolean;
   plan?: InternalPatchPlan;
 }
 export interface EnsureInternalResult {
@@ -95,6 +104,32 @@ function vaToFileOffset(pe: StudioPe, va: bigint): number | undefined {
 
 function readDisp32(data: Buffer, offset: number): number {
   return data.readInt32LE(offset);
+}
+
+/** Decode the target of `cmp byte ptr [rip+disp32], 0`. */
+function cmpFlagTarget(data: Buffer, pe: StudioPe, offset: number): bigint | undefined {
+  if (offset + 7 > data.length || data[offset] !== 0x80 || data[offset + 1] !== 0x3d || data[offset + 6] !== 0) return;
+  const va = fileOffsetToVa(pe, offset);
+  if (va === undefined) return;
+  return va + 7n + BigInt(readDisp32(data, offset + 2));
+}
+
+/**
+ * Locate the nearby retail-build guard used by Internal-only constructors.
+ * It checks the same two flags as the Internal helper and throws when either is unavailable.
+ */
+function findInternalGuard(data: Buffer, pe: StudioPe, helperOffset: number, textEnd: number): number | undefined {
+  const firstFlag = cmpFlagTarget(data, pe, helperOffset);
+  const secondFlag = cmpFlagTarget(data, pe, helperOffset + 9);
+  if (firstFlag === undefined || secondFlag === undefined) return;
+  for (let offset = helperOffset + 0x20; offset + 27 <= Math.min(textEnd, helperOffset + 0x400); offset++) {
+    const stackSize = data[offset + 3];
+    if (data[offset] !== 0x48 || data[offset + 1] !== 0x83 || data[offset + 2] !== 0xec) continue;
+    if (data[offset + 11] !== 0x74 || data[offset + 20] !== 0x74) continue;
+    if (cmpFlagTarget(data, pe, offset + 4) !== firstFlag || cmpFlagTarget(data, pe, offset + 13) !== secondFlag) continue;
+    if (data[offset + 22] !== 0x48 || data[offset + 23] !== 0x83 || data[offset + 24] !== 0xc4 || data[offset + 25] !== stackSize || data[offset + 26] !== 0xc3) continue;
+    return offset;
+  }
 }
 
 /** Decode a RIP-relative E8 call; returns the callee VA. */
@@ -166,12 +201,32 @@ export function inspectInternalPatch(data: Buffer): InternalPatchInspection {
   const functionVa = callTarget(data, pe, callOffset)!;
   const fileOffset = vaToFileOffset(pe, functionVa)!;
   const originalBytes = data.subarray(fileOffset, fileOffset + 8);
+  const guardFileOffset = findInternalGuard(data, pe, fileOffset, textEnd);
+  if (guardFileOffset === undefined) {
+    return {
+      ok: false,
+      reason: 'Could not find the retail-build guard associated with the Internal helper.',
+      markerOffset: marker,
+      markerRva: Number(markerVa - pe.imageBase),
+      leaOffset,
+      callOffset,
+      helperOffset: fileOffset,
+      helperBytes: originalBytes.toString('hex'),
+      helperLooksKnown: isInternalHelper(originalBytes),
+    };
+  }
+  const guardVa = fileOffsetToVa(pe, guardFileOffset)!;
+  const guardOriginalBytes = data.subarray(guardFileOffset, guardFileOffset + GUARD_PATCHED.length);
   const plan: InternalPatchPlan = {
     markerRva: Number(markerVa - pe.imageBase),
     functionRva: Number(functionVa - pe.imageBase),
     fileOffset,
     originalBytes: originalBytes.toString('hex'),
     patchedBytes: PATCHED.toString('hex'),
+    guardRva: Number(guardVa - pe.imageBase),
+    guardFileOffset,
+    guardOriginalBytes: guardOriginalBytes.toString('hex'),
+    guardPatchedBytes: GUARD_PATCHED.toString('hex'),
   };
   return {
     ok: true,
@@ -182,6 +237,9 @@ export function inspectInternalPatch(data: Buffer): InternalPatchInspection {
     helperOffset: fileOffset,
     helperBytes: plan.originalBytes,
     helperLooksKnown: isInternalHelper(originalBytes),
+    guardOffset: plan.guardFileOffset,
+    guardBytes: plan.guardOriginalBytes,
+    guardLooksKnown: guardOriginalBytes[0] === 0x48 && guardOriginalBytes[1] === 0x83 && guardOriginalBytes[2] === 0xec,
     plan,
   };
 }
@@ -194,12 +252,17 @@ export function planInternalPatch(data: Buffer): InternalPatchPlan {
 
 export function applyInternalPatch(data: Buffer, plan = planInternalPatch(data)): Buffer {
   const current = data.subarray(plan.fileOffset, plan.fileOffset + 8);
-  if (current.equals(PATCHED)) return data;
-  if (!isInternalHelper(current)) {
+  const guard = data.subarray(plan.guardFileOffset, plan.guardFileOffset + GUARD_PATCHED.length);
+  if (current.equals(PATCHED) && guard.equals(GUARD_PATCHED)) return data;
+  if (!current.equals(PATCHED) && !isInternalHelper(current)) {
     throw new AppError('STUDIO_PATCH_FAILED', `Internal helper bytes were ${current.toString('hex')}; expected cmp [rip],0 / je.`);
+  }
+  if (!guard.equals(GUARD_PATCHED) && guard.toString('hex') !== plan.guardOriginalBytes) {
+    throw new AppError('STUDIO_PATCH_FAILED', `Internal guard bytes were ${guard.toString('hex')}; expected ${plan.guardOriginalBytes}.`);
   }
   const out = Buffer.from(data);
   PATCHED.copy(out, plan.fileOffset);
+  GUARD_PATCHED.copy(out, plan.guardFileOffset);
   return out;
 }
 
