@@ -10,7 +10,7 @@
 - 📅 **管理活动** · 创建、查询、修改和删除游戏活动，设置时间、类别、入口与可见性，上传并绑定活动图片。
 - 🌐 **同步本地化** · 管理 18 种语言的游戏标题和简介，用 DeepSeek 补齐游戏内翻译并同步到多个游戏。
 - 🎨 **处理图标与素材** · 从当前游戏图标生成倒计时，定时换图并恢复原图。上传开发者产品图标，也可以下载素材原图。
-- 🪟 **操作 Windows Studio** · 打开或关闭项目，或将当前项目发布到指定 Place。
+- 🪟 **操作 Windows Studio** · 默认打开 Internal 权限版，也可关闭项目或发布到指定 Place。
 
 ## ✨ 亮点
 
@@ -31,3 +31,5 @@ rbx --help
 在 Windows 上可用 `rbx auth set` 保存 Roblox Open Cloud API Key。也可以在任意平台设置 `ROBLOX_API_KEY` 环境变量。配置前运行 `rbx auth permissions` 查看各功能所需权限；配置后用 `rbx auth check --for devproduct-sync --universe <ID>` 检查缺失权限和游戏范围（DataStore 检查可加 `--datastore <名称>`）。此检查不执行业务写操作，也不证明账号实际访问权。配置后用 `rbx universe scan` 建立游戏目录，再运行 `rbx universe list` 查看。
 
 [📚 命令参考](docs/cli-reference.md)
+
+Studio Internal 补丁更新后的定位与扩匹配见 [Internal 补丁维护](docs/studio-internal.md)。

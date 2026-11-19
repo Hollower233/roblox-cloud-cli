@@ -20,7 +20,7 @@ export interface AssetCacheResult {
 
 async function processes(): Promise<CacheProcess[]> {
   const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    "$ErrorActionPreference = 'Stop'; $items = @(Get-Process | Where-Object { $_.ProcessName -in @('RobloxStudioBeta','RobloxStudio','RobloxPlayerBeta','RobloxPlayer') } | ForEach-Object { @{ name = $_.ProcessName; pid = $_.Id } }); ConvertTo-Json -InputObject $items -Compress"],
+    "$ErrorActionPreference = 'Stop'; $items = @(Get-Process | Where-Object { $_.ProcessName -in @('RobloxStudioBeta','RobloxStudioBeta_INTERNAL','RobloxStudio','RobloxPlayerBeta','RobloxPlayer') } | ForEach-Object { @{ name = $_.ProcessName; pid = $_.Id } }); ConvertTo-Json -InputObject $items -Compress"],
   { windowsHide: true, timeout: 15000 });
   const value: unknown = JSON.parse(stdout.replace(/^\uFEFF/, '').trim());
   if (!Array.isArray(value) || !value.every(p => typeof p.name === 'string' && Number.isInteger(p.pid))) throw new Error('Invalid process response');

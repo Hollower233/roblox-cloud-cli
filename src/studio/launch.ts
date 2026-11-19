@@ -2,13 +2,23 @@ import { execFile, spawn } from 'node:child_process';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AppError, id } from '../core/errors.js';
+import { enableElevatedCapabilities, ensureInternalStudio, recordPatchReceipt, STOCK_EXE, STUDIO_PROCESS_NAMES, type EnsureInternalResult } from './internal.js';
 import type { HttpClient } from '../transport/http-client.js';
 import type { Game } from '../universes/models.js';
 
 /** One running Studio edit session, parsed from its process command line. */
 export interface StudioProcess { pid: number; placeId: string; universeId?: string; title?: string }
 export interface StudioTarget { placeId: string; universeId: string; name?: string }
-export interface OpenResult extends StudioTarget { pid: number; alreadyOpen: boolean; ready: boolean; title?: string; executable?: string; elapsedMs: number }
+export interface OpenResult extends StudioTarget {
+  pid: number;
+  alreadyOpen: boolean;
+  ready: boolean;
+  title?: string;
+  executable?: string;
+  internal?: boolean;
+  patch?: EnsureInternalResult;
+  elapsedMs: number;
+}
 
 /** OS seams so the launcher can be tested offline. */
 export interface StudioSystem {
@@ -16,8 +26,8 @@ export interface StudioSystem {
   localAppData?: string;
   /** Version directories containing RobloxStudioBeta.exe, with that file's mtime. */
   studioBuilds(versionsDir: string): Promise<{ executable: string; mtimeMs: number }[]>;
-  /** Raw processes named RobloxStudioBeta.exe. */
-  processes(): Promise<{ pid: number; commandLine: string; title: string }[]>;
+  /** Raw Studio editor processes, including the Internal copy. */
+  processes(): Promise<{ pid: number; commandLine: string; title: string; name?: string }[]>;
   launch(executable: string, args: string[]): Promise<number>;
   focus(pid: number): Promise<void>;
   /** Ask the main window to close (like clicking X); returns false when the process has no window to close. */
@@ -27,7 +37,7 @@ export interface StudioSystem {
   now(): number;
 }
 
-const EXE = 'RobloxStudioBeta.exe';
+const EXE = STOCK_EXE;
 function argValue(commandLine: string, name: string): string | undefined {
   return new RegExp(`(?:^|\\s)--?${name}\\s+"?([^\\s"]+)`, 'i').exec(commandLine)?.[1];
 }
@@ -39,8 +49,13 @@ export function parseStudioProcess(row: { pid: number; commandLine: string; titl
   const universeId = argValue(row.commandLine, 'universeId');
   return { pid: row.pid, placeId, ...(universeId && /^\d+$/.test(universeId) ? { universeId } : {}), ...(row.title ? { title: row.title } : {}) };
 }
-/** The editor window title becomes "<place> - Roblox Studio" once the place has loaded. */
-export function isReadyTitle(title: string | undefined): boolean { return Boolean(title && / - Roblox Studio$/.test(title)); }
+/** Loaded editor titles end with "Roblox Studio", with an optional `[Internal]` suffix. */
+export function isReadyTitle(title: string | undefined): boolean {
+  return Boolean(title && / - Roblox Studio(?:\s*\[Internal\])?$/.test(title));
+}
+export function isInternalTitle(title: string | undefined): boolean {
+  return Boolean(title && /\[Internal\]/i.test(title));
+}
 
 function requireWindows(system: StudioSystem): void {
   if (system.platform !== 'win32') throw new AppError('UNSUPPORTED_PLATFORM', 'Opening Roblox Studio is only supported on Windows.');
@@ -90,19 +105,45 @@ export async function resolveStudioTarget(http: HttpClient, input: { game?: stri
   return { placeId, universeId: game.universeId, ...(name ? { name } : {}) };
 }
 
-export interface OpenOptions { wait?: boolean; timeoutMs?: number; pollMs?: number; signal?: AbortSignal; progress?: (message: string) => void }
+export interface OpenOptions {
+  wait?: boolean;
+  timeoutMs?: number;
+  pollMs?: number;
+  signal?: AbortSignal;
+  progress?: (message: string) => void;
+  /** Official Studio binary. Default is the Internal copy. */
+  stock?: boolean;
+  home?: string;
+}
 /** Open the place for editing, reusing an existing edit session of the same place. */
 export async function openStudio(system: StudioSystem, target: StudioTarget, options: OpenOptions = {}): Promise<OpenResult> {
   requireWindows(system);
   const started = system.now(), wait = options.wait ?? true, timeoutMs = options.timeoutMs ?? 120_000, pollMs = options.pollMs ?? 2_000;
+  const wantInternal = options.stock !== true;
   const existing = (await listStudioSessions(system)).find(p => p.placeId === target.placeId);
   if (existing) {
-    await system.focus(existing.pid).catch(() => undefined);
-    return { ...target, pid: existing.pid, alreadyOpen: true, ready: isReadyTitle(existing.title), ...(existing.title ? { title: existing.title } : {}), elapsedMs: system.now() - started };
+    const alreadyInternal = isInternalTitle(existing.title);
+    if (!wantInternal || alreadyInternal) {
+      await system.focus(existing.pid).catch(() => undefined);
+      return { ...target, pid: existing.pid, alreadyOpen: true, ready: isReadyTitle(existing.title), internal: alreadyInternal, ...(existing.title ? { title: existing.title } : {}), elapsedMs: system.now() - started };
+    }
+    throw new AppError('ARGUMENT_ERROR', `Place ${target.placeId} is already open in official Studio (pid ${existing.pid}). Close it first, or pass --stock.`);
   }
-  const executable = await findStudioExecutable(system);
+  const stock = await findStudioExecutable(system);
+  let executable = stock;
+  let patch: EnsureInternalResult | undefined;
+  if (wantInternal) {
+    options.progress?.('Preparing Internal Studio');
+    patch = await ensureInternalStudio(stock);
+    executable = patch.executable;
+    if (system.localAppData) await enableElevatedCapabilities(system.localAppData);
+    if (options.home) await recordPatchReceipt(options.home, patch);
+  }
   let pid = await system.launch(executable, ['-task', 'EditPlace', '-placeId', target.placeId, '-universeId', target.universeId]);
-  const result = (ready: boolean, title?: string): OpenResult => ({ ...target, pid, alreadyOpen: false, ready, ...(title ? { title } : {}), executable, elapsedMs: system.now() - started });
+  const result = (ready: boolean, title?: string): OpenResult => ({
+    ...target, pid, alreadyOpen: false, ready, executable, internal: wantInternal, ...(patch ? { patch } : {}),
+    ...(title ? { title } : {}), elapsedMs: system.now() - started,
+  });
   if (!wait) return result(false);
   options.progress?.(`Waiting for Studio to load place ${target.placeId}`);
   while (system.now() - started < timeoutMs) {
@@ -177,7 +218,8 @@ export function windowsStudioSystem(): StudioSystem {
       return builds;
     },
     async processes() {
-      const out = await powershell(`$t=@{}; Get-Process -Name RobloxStudioBeta -ErrorAction SilentlyContinue | ForEach-Object { $t[$_.Id]=$_.MainWindowTitle }; @(Get-CimInstance Win32_Process -Filter "Name='${EXE}'" | ForEach-Object { [pscustomobject]@{ pid=[int]$_.ProcessId; commandLine=[string]$_.CommandLine; title=[string]$t[[int]$_.ProcessId] } }) | ConvertTo-Json -Compress -Depth 2`);
+      const names = STUDIO_PROCESS_NAMES.map(n => `'${n}.exe'`).join(',');
+      const out = await powershell(`$t=@{}; Get-Process -Name ${STUDIO_PROCESS_NAMES.join(',')} -ErrorAction SilentlyContinue | ForEach-Object { $t[$_.Id]=$_.MainWindowTitle }; @(Get-CimInstance Win32_Process | Where-Object { $_.Name -in @(${names}) } | ForEach-Object { [pscustomobject]@{ pid=[int]$_.ProcessId; name=[string]$_.Name; commandLine=[string]$_.CommandLine; title=[string]$t[[int]$_.ProcessId] } }) | ConvertTo-Json -Compress -Depth 2`);
       const text = out.trim();
       if (!text) return [];
       const parsed = JSON.parse(text) as unknown;

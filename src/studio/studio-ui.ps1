@@ -128,7 +128,7 @@ function Remove-Tmp { try { if ($script:Tmp) { Remove-Item $script:Tmp -ErrorAct
 $A = [System.Windows.Automation.AutomationElement]; $TS = [System.Windows.Automation.TreeScope]
 # Sets $script:StudioProc / $script:StudioMain for the editor process.
 function Find-Studio([int]$ProcessId) {
-  $procs = @(Get-Process RobloxStudioBeta -ErrorAction SilentlyContinue)
+  $procs = @(Get-Process RobloxStudioBeta,RobloxStudioBeta_INTERNAL -ErrorAction SilentlyContinue)
   if ($ProcessId) { $procs = @($procs | Where-Object Id -eq $ProcessId) }
   if ($procs.Count -ne 1) { throw "Studio process $ProcessId not found." }
   $script:StudioProc = $procs[0]

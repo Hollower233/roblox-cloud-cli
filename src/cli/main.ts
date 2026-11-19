@@ -35,7 +35,8 @@ import { emit, renderCatalog, renderIconPlan, renderLocalization, localTime, rem
 import { IconAssets, IconCountdown, type CountdownEvent, type CountdownOptions } from '../icons/countdown.js';
 import { parseTargetTime, requireDuration } from '../icons/frames.js';
 import type { Catalog, Warning } from '../universes/models.js';
-import { closeStudio, listStudioSessions, openStudio, resolveStudioTarget, windowsStudioSystem } from '../studio/launch.js';
+import { closeStudio, findStudioExecutable, listStudioSessions, openStudio, resolveStudioTarget, windowsStudioSystem } from '../studio/launch.js';
+import { enableElevatedCapabilities, ensureInternalStudio, inspectInternalPatch, recordPatchReceipt, sha256 } from '../studio/internal.js';
 import { pickSession, placeEntries, planPublishTarget, publishAs, resolvePublishGame, windowsPublishAsSystem } from '../studio/publish-as.js';
 import { normalizeVersionNotes, saveWithNotes, windowsSaveNotesSystem } from '../studio/save-notes.js';
 
@@ -540,17 +541,42 @@ servers.command('restart').description('Submit a restart for one place or all ac
   });
 
 const studio = program.command('studio').description('Open places in local Roblox Studio (Windows)');
-studio.command('open [game]').description('Open a game\'s root place (name or Universe ID from the local catalog) for editing; reuses an open session')
+studio.command('open [game]').description('Open a game\'s root place for editing in Internal Studio; reuses an open Internal session')
   .option('--place <placeId>', 'Open this exact Place ID instead of a root place', id)
+  .option('--stock', 'Launch official RobloxStudioBeta.exe instead of the Internal copy')
   .option('--no-wait', 'Return right after launching instead of waiting for the place to load')
   .option('--timeout <seconds>', 'Maximum seconds to wait for loading', (v: string) => Number(id(v)), 120)
-  .action(async (game: string | undefined, options: { place?: string; wait: boolean; timeout: number }) => {
+  .action(async (game: string | undefined, options: { place?: string; stock?: boolean; wait: boolean; timeout: number }) => {
     const local = store(), config = await local.config();
     const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;
     const target = await resolveStudioTarget(new HttpClient({ signal: abort.signal }), { game, place: options.place }, catalog?.games);
-    const result = await openStudio(windowsStudioSystem(), target, { wait: options.wait, timeoutMs: options.timeout * 1000, signal: abort.signal, progress: m => { if (!json()) process.stderr.write(clean(m) + '\n'); } });
+    const result = await openStudio(windowsStudioSystem(), target, { wait: options.wait, timeoutMs: options.timeout * 1000, signal: abort.signal, stock: Boolean(options.stock), home: local.home, progress: m => { if (!json()) process.stderr.write(clean(m) + '\n'); } });
     const state = result.alreadyOpen ? '已打开（已切到前台）' : result.ready ? '已加载' : '已启动，未等待加载';
-    emit(result, json(), `${clean(result.name ?? result.title ?? '')}\nPlace ${result.placeId}  Universe ${result.universeId}\nPID ${result.pid}  ${state}  ${(result.elapsedMs / 1000).toFixed(1)}s`);
+    const kind = result.internal ? 'Internal' : '官方';
+    emit(result, json(), `${clean(result.name ?? result.title ?? '')}\nPlace ${result.placeId}  Universe ${result.universeId}\nPID ${result.pid}  ${kind}  ${state}  ${(result.elapsedMs / 1000).toFixed(1)}s`);
+  });
+studio.command('patch').description('Create or reuse RobloxStudioBeta_INTERNAL.exe for the newest Studio build, without launching it')
+  .option('--inspect', 'Locate the Internal helper in the official exe without writing a copy')
+  .action(async (options: { inspect?: boolean }) => {
+    const system = windowsStudioSystem();
+    const stock = await findStudioExecutable(system);
+    if (options.inspect) {
+      const source = await readFile(stock);
+      const inspection = inspectInternalPatch(source);
+      const data = { stock, sourceSha256: sha256(source), ...inspection };
+      if (!inspection.ok) {
+        if (json()) process.stdout.write(JSON.stringify({ schemaVersion: 1, status: 'error', error: { code: 'STUDIO_PATCH_FAILED', message: inspection.reason }, data }) + '\n');
+        else process.stderr.write(`Error [STUDIO_PATCH_FAILED] ${clean(inspection.reason ?? '')}\n`);
+        process.exitCode = 1;
+        return;
+      }
+      emit(data, json(), `定位成功\n${stock}\nfileOffset ${inspection.plan?.fileOffset}\noriginalBytes ${inspection.plan?.originalBytes}\n源 SHA-256 ${data.sourceSha256}`);
+      return;
+    }
+    const result = await ensureInternalStudio(stock);
+    if (system.localAppData) await enableElevatedCapabilities(system.localAppData);
+    await recordPatchReceipt(store().home, result);
+    emit(result, json(), `${result.reused ? '已复用' : '已生成'} Internal Studio\n${result.executable}\n源 SHA-256 ${result.sourceSha256}\n产物 SHA-256 ${result.outputSha256}`);
   });
 studio.command('close [games...]').description('Close Studio edit sessions by game name or Universe ID; soft close by default (Studio may ask to save)')
   .option('--place <placeId>', 'Close sessions of this Place ID', id)

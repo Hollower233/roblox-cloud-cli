@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { HttpClient, closeStudio, findStudioExecutable, openStudio, parseStudioProcess, resolveStudioTarget, type StudioSystem } from '../src/index.js';
+import { HttpClient, closeStudio, findStudioExecutable, isReadyTitle, openStudio, parseStudioProcess, resolveStudioTarget, type StudioSystem } from '../src/index.js';
 import { AppError } from '../src/core/errors.js';
 
 type Row = { pid: number; commandLine: string; title: string };
@@ -39,22 +39,39 @@ test('the newest Studio build is chosen and non-Windows is rejected', async () =
   await assert.rejects(findStudioExecutable(fakeSystem({ studioBuilds: async () => [] }).system), (e: AppError) => e.code === 'STUDIO_NOT_FOUND');
   await assert.rejects(findStudioExecutable(fakeSystem({ platform: 'linux' }).system), (e: AppError) => e.code === 'UNSUPPORTED_PLATFORM');
 });
-test('an already open place is focused instead of launched again', async () => {
-  const { system, launched, focused } = fakeSystem({ rows: [[edit(42, '100', 'X - Roblox Studio')]] });
+test('an already open Internal place is focused instead of launched again', async () => {
+  const { system, launched, focused } = fakeSystem({ rows: [[edit(42, '100', 'X - Roblox Studio [Internal]')]] });
   const result = await openStudio(system, { placeId: '100', universeId: '7' });
-  assert.equal(result.alreadyOpen, true); assert.equal(result.pid, 42); assert.equal(result.ready, true);
+  assert.equal(result.alreadyOpen, true); assert.equal(result.pid, 42); assert.equal(result.ready, true); assert.equal(result.internal, true);
   assert.deepEqual(launched, []); assert.deepEqual(focused, [42]);
+});
+test('an already open official place is reused only with --stock', async () => {
+  const { system, launched, focused } = fakeSystem({ rows: [[edit(42, '100', 'X - Roblox Studio')]] });
+  const result = await openStudio(system, { placeId: '100', universeId: '7' }, { stock: true });
+  assert.equal(result.alreadyOpen, true); assert.equal(result.internal, false);
+  assert.deepEqual(launched, []); assert.deepEqual(focused, [42]);
+});
+test('ready titles accept the Internal suffix', () => {
+  assert.equal(isReadyTitle('Example Test - Roblox Studio'), true);
+  assert.equal(isReadyTitle('Example Test - Roblox Studio [Internal]'), true);
+  assert.equal(isReadyTitle('Roblox Studio'), false);
 });
 test('launch passes EditPlace arguments and waits for the loaded title, following PID hand-off', async () => {
   const { system, launched } = fakeSystem({ rows: [[], [edit(77, '100', 'Roblox Studio')], [edit(77, '100', 'Example Test - Roblox Studio')]] });
-  const result = await openStudio(system, { placeId: '100', universeId: '7' }, { pollMs: 1000 });
+  const result = await openStudio(system, { placeId: '100', universeId: '7' }, { pollMs: 1000, stock: true });
   assert.deepEqual(launched, [['C:\\L\\new\\RobloxStudioBeta.exe', '-task', 'EditPlace', '-placeId', '100', '-universeId', '7']]);
   assert.equal(result.ready, true); assert.equal(result.pid, 77); assert.equal(result.title, 'Example Test - Roblox Studio');
+  assert.equal(result.internal, false);
+});
+test('an official session is not reused when Internal Studio is requested', async () => {
+  const { system, launched } = fakeSystem({ rows: [[edit(42, '100', 'X - Roblox Studio')]] });
+  await assert.rejects(openStudio(system, { placeId: '100', universeId: '7' }), (e: AppError) => e.code === 'ARGUMENT_ERROR' && e.message.includes('--stock'));
+  assert.deepEqual(launched, []);
 });
 test('no-wait returns immediately and a stuck load times out', async () => {
-  const quick = await openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { wait: false });
+  const quick = await openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { wait: false, stock: true });
   assert.equal(quick.ready, false); assert.equal(quick.pid, 500);
-  await assert.rejects(openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { timeoutMs: 5000, pollMs: 1000 }), (e: AppError) => e.code === 'TIMEOUT');
+  await assert.rejects(openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { timeoutMs: 5000, pollMs: 1000, stock: true }), (e: AppError) => e.code === 'TIMEOUT');
 });
 test('targets resolve from the catalog first, then public endpoints', async () => {
   const games = [{ universeId: '7', name: 'Example Test', rootPlaceId: '100' }, { universeId: '8', name: 'Dup' }, { universeId: '9', name: 'dup' }];

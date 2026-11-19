@@ -1,9 +1,10 @@
 # Roblox Cloud CLI
 
-- 本仓库为独立 TypeScript CLI，不修改 Roblox Studio。
+- 本仓库为独立 TypeScript CLI。默认不覆盖官方 `RobloxStudioBeta.exe`；Windows 上 `studio open` 会为当前版本生成同目录的 `RobloxStudioBeta_INTERNAL.exe`。
 - 项目系统记录在 AGENTS.md 与 CLAUDE.md 中保持一致。
 - Key、Cookie、真实账号扫描结果不得提交。真实 API 测试显式运行，默认测试离线。
 - 将可复用的 Roblox API 操作沉淀为正式 CLI/SDK 能力；实现前先与用户确认目标与边界，避免依赖一次性脚本。
+- 每次完成新功能后，若用户主动发起该功能的测试，待该次测试通过后，直接提交并推送本次功能相关改动到 GitHub，无需再次确认。测试失败或结果尚未确认时，先完成验证。
 
 ## 发布文案
 
@@ -23,6 +24,7 @@
 - 离线测试与虚构响应样例：`tests/`、`tests/fixtures/`。
 - 真实 API 冒烟测试：`scripts/live-smoke.ts`。
 - 命令示例、权限、JSON 输出、退出码与备份恢复见 [命令参考](docs/cli-reference.md)。项目概览见 [README](README.md)。
+- Studio Internal 补丁定位链与更新后维护见 [Internal 补丁维护](docs/studio-internal.md)。
 - CI：`.github/workflows/ci.yml`。
 
 ## API Key 权限诊断
@@ -158,11 +160,11 @@
 
 ## 打开 Studio 项目
 
-- 启动与会话识别：`src/studio/launch.ts`；命令 `studio open [game] [--place <id>] [--no-wait] [--timeout <s>]`、`studio list`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅 Windows，不需要 API Key。
+- 启动与会话识别：`src/studio/launch.ts`；Internal 补丁：`src/studio/internal.ts`。命令 `studio open [game] [--place <id>] [--stock] [--no-wait] [--timeout <s>]`、`studio patch`、`studio list`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅 Windows，不需要 API Key。
 - 目标解析优先用游戏目录的 `rootPlaceId`（扫描/刷新时从 Cloud v2 Universe 的 `rootPlace` 记录），缺失时走公开 `develop.roblox.com` / `apis.roblox.com/universes/v1/places/{id}/universe`。
-- 已打开同 Place 的编辑会话（命令行 `-task EditPlace -placeId`）只切前台；否则用 `Versions` 下最新 `RobloxStudioBeta.exe -task EditPlace -placeId -universeId` 启动，窗口标题变为 `* - Roblox Studio` 视为加载完成。参数未公开文档化。
+- 已打开同 Place 的 Internal 编辑会话只切前台。默认启动当前版本目录下的 `RobloxStudioBeta_INTERNAL.exe`；`--stock` 才用官方 `RobloxStudioBeta.exe`。窗口标题变为 `* - Roblox Studio` 或带 `[Internal]` 视为加载完成。补丁失败硬失败，不回落到官方 exe。参数未公开文档化。
 - `studio close [games...] [--place] [--pid] [--all] [--force] [--timeout]`：默认软关闭（CloseMainWindow，Studio 自行弹保存提示，超时未关返回 `pending`），`--force` 结束编辑器及 `-editpid` 指向它的 Team Test 进程；`--all` 不可与 `--force` 同用。
-- 离线验证：`tests/studio.test.ts`。
+- 离线验证：`tests/studio.test.ts`、`tests/studio-internal.test.ts`。维护手册：[Internal 补丁维护](docs/studio-internal.md)。
 
 ## Studio Publish As
 
