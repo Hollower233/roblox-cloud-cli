@@ -1,113 +1,184 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
 import { AppError } from '../core/errors.js';
-import { readRbxm, writeRbxm, type ScriptNode } from './rbxm.js';
-import { MASTER_NAME, languageModuleSource, luaString, masterModuleSource, parseLanguageSource, parseMasterSource, type MasterRow } from './lua-table.js';
+import { checkTranslation, translate, type TranslationJob, type TranslateOptions, type TranslationProvider } from '../translation/deepseek.js';
+import { SUPPORTED_LANGUAGE_CODES } from './languages.js';
 
-export const SOURCE_LOCALE = 'en';
-export const MASTER_LOCALE = 'zh-hans';
-export const LANGUAGE_CODE = /^[a-z]{2,3}(?:-[a-z]{2,4})?$/;
+export const CHINESE_LOCALE = 'zh-hans';
+const defaultLocales = SUPPORTED_LANGUAGE_CODES.filter(code => code !== 'en');
+const localePattern = /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/;
 
-/**
- * The Studio localization table: master rows (en → zh-hans) plus one child module per
- * other locale. The master is read-only for the CLI; child modules are fully regenerated.
- */
-export class LocalizationTable {
-  constructor(public name: string, public masterSource: string, public rows: MasterRow[], public languages: Map<string, Map<string, string>>) {}
+export interface TableTarget { placeId: string; table: string }
+interface EntryIdentity { key: string; source: string; context: string }
+export interface TableEntry extends EntryIdentity { values: Record<string, string> }
+export interface TableSnapshot extends TableTarget {
+  sourceLocale: string;
+  locales: string[];
+  entries: TableEntry[];
+}
+export interface TableEdit extends TableEntry {
+  expected: Record<string, string | null>;
+  expectedZh?: string;
+}
+export interface TablePatch extends TableTarget { entries: TableEdit[] }
 
-  static fromRbxm(file: Buffer): LocalizationTable {
-    const roots = readRbxm(file).filter(node => node.className === 'ModuleScript');
-    if (roots.length !== 1) throw new AppError('ARGUMENT_ERROR', 'The .rbxm must contain exactly one root ModuleScript (the localization table).');
-    const root = roots[0]!;
-    if (root.source === null) throw new AppError('ARGUMENT_ERROR', 'The localization table ModuleScript has no Source.');
-    const rows = parseMasterSource(root.source, root.name);
-    const languages = new Map<string, Map<string, string>>();
-    for (const child of root.children) {
-      if (child.className !== 'ModuleScript' || child.source === null) continue;
-      if (!LANGUAGE_CODE.test(child.name) || child.name === SOURCE_LOCALE || child.name === MASTER_LOCALE) {
-        throw new AppError('ARGUMENT_ERROR', `Unexpected child module ${JSON.stringify(child.name)}; children must be Roblox language codes other than en/zh-hans.`);
-      }
-      if (languages.has(child.name)) throw new AppError('ARGUMENT_ERROR', `Duplicate language module ${child.name}.`);
-      languages.set(child.name, parseLanguageSource(child.source, `${root.name}.${child.name}`));
-    }
-    // A previous sync output carries the import suffix; the table's real name is without it.
-    const name = root.name.endsWith(IMPORT_SUFFIX) ? root.name.slice(0, -IMPORT_SUFFIX.length) : root.name;
-    return new LocalizationTable(name, root.source, rows, languages);
-  }
+function invalid(message: string): never {
+  throw new AppError('ARGUMENT_ERROR', message);
+}
 
-  static async load(path: string): Promise<LocalizationTable> {
-    let file: Buffer;
-    try { file = await readFile(resolve(path)); } catch { throw new AppError('ARGUMENT_ERROR', `Cannot read ${path}.`); }
-    return LocalizationTable.fromRbxm(file);
-  }
+function record(value: unknown, field: string): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) invalid(`${field} must be an object.`);
+  return value as Record<string, unknown>;
+}
 
-  /** A new master with the standard header and no rows; language modules come from sync. */
-  static empty(name = MASTER_NAME): LocalizationTable {
-    return new LocalizationTable(name, masterModuleSource(), [], new Map());
-  }
+function rows(value: unknown): unknown[] {
+  if (!Array.isArray(value)) invalid('entries must be an array.');
+  return value;
+}
 
-  /** Translation for a source in a locale; zh-hans comes from the master. Empty strings count as missing. */
-  get(source: string, locale: string): string | undefined {
-    if (locale === MASTER_LOCALE) return this.rows.find(row => row.en === source)?.zh || undefined;
-    return this.languages.get(locale)?.get(source) || undefined;
-  }
+function string(value: unknown, field: string): string {
+  if (typeof value !== 'string') invalid(`${field} must be a string.`);
+  return value;
+}
 
-  set(source: string, locale: string, text: string): void {
-    if (locale === SOURCE_LOCALE || locale === MASTER_LOCALE) throw new AppError('ARGUMENT_ERROR', 'The CLI never writes en or zh-hans.');
-    if (!this.languages.has(locale)) this.languages.set(locale, new Map());
-    this.languages.get(locale)!.set(source, text);
-  }
+function nonempty(value: unknown, field: string): string {
+  const text = string(value, field);
+  if (!text.trim()) invalid(`${field} cannot be blank.`);
+  return text;
+}
 
-  /** Child locales sorted; entries follow master order and drop sources the master no longer has. */
-  toRbxm(rootName = this.name): Buffer {
-    const children: ScriptNode[] = [...this.languages.keys()].sort().map(locale => {
-      const map = this.languages.get(locale)!;
-      const rows = this.rows.filter(row => map.get(row.en)).map(row => [row.en, map.get(row.en)!] as [string, string]);
-      return { className: 'ModuleScript', name: locale, source: languageModuleSource(locale, rows), children: [] };
-    });
-    return writeRbxm([{ className: 'ModuleScript', name: rootName, source: this.masterSource, children }]);
-  }
+function locale(code: unknown): string {
+  const text = string(code, 'locale');
+  if (!localePattern.test(text)) invalid(`Use a lowercase language tag such as ja or zh-hans: ${JSON.stringify(text)}.`);
+  return text;
+}
 
-  /** Saved under IMPORT_SUFFIX so it can sit beside the live table until studioSwapLuau verifies it. */
-  async save(path: string): Promise<string> {
-    const target = resolve(path);
-    await mkdir(dirname(target), { recursive: true });
-    try { await writeFile(target, this.toRbxm(this.name + IMPORT_SUFFIX)); } catch { throw new AppError('STORAGE_ERROR', `Cannot write ${path}.`); }
-    return target;
-  }
+export function tableLocales(locales?: readonly string[]): string[] {
+  if (!locales) return [...defaultLocales];
+  if (!locales.length) invalid('Provide at least one locale.');
+  return [...new Set(locales.map(locale))];
+}
 
-  /** Written under the table's own name for a first import; refuses to overwrite unless forced. */
-  async create(path: string, options: { force?: boolean } = {}): Promise<string> {
-    const target = resolve(path);
-    await mkdir(dirname(target), { recursive: true });
-    try { await writeFile(target, this.toRbxm(), { flag: options.force ? 'w' : 'wx' }); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new AppError('ARGUMENT_ERROR', `${path} already exists; use --force to overwrite.`);
-      throw new AppError('STORAGE_ERROR', `Cannot write ${path}.`);
-    }
-    return target;
-  }
+export function tableTarget(placeId: unknown, table: unknown): TableTarget {
+  const place = string(placeId, 'placeId');
+  if (!/^[1-9]\d*$/.test(place) || !Number.isSafeInteger(Number(place))) invalid('placeId must be a positive safe Roblox Place ID.');
+  return { placeId: place, table: nonempty(table, 'table') };
+}
 
-  /** Number of stored translations no longer referenced by the master (removed on save). */
-  orphans(): number {
-    const sources = new Set(this.rows.map(row => row.en));
-    let count = 0;
-    for (const map of this.languages.values()) for (const key of map.keys()) if (!sources.has(key)) count++;
-    return count;
+function identity(row: Record<string, unknown>): EntryIdentity {
+  return {
+    key: row.key === undefined ? '' : string(row.key, 'key'),
+    source: nonempty(row.source, 'source'),
+    context: row.context === undefined ? '' : string(row.context, 'context'),
+  };
+}
+
+function entryId(entry: EntryIdentity): string {
+  return JSON.stringify([entry.key, entry.source, entry.context]);
+}
+
+function assertUniqueEntries(entries: EntryIdentity[]): void {
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    const id = entryId(entry);
+    if (seen.has(id)) invalid(`Duplicate Key/Source/Context: ${id}.`);
+    seen.add(id);
   }
 }
 
-export const IMPORT_SUFFIX = '__sync';
+function values(input: unknown, field: string, allowEmptyArray = false): Record<string, string> {
+  if (allowEmptyArray && Array.isArray(input) && !input.length) return {};
+  return Object.fromEntries(Object.entries(record(input, field)).map(([code, text]) => [locale(code), string(text, field)]));
+}
 
-/** Luau for the agent: after import_rbxm, swap only if the Studio master is unchanged. */
-export function studioSwapLuau(parentPath: string, name: string): string {
-  return [
-    `local parent = ${parentPath}`,
-    `local old, new = parent:FindFirstChild(${luaString(name)}), parent:FindFirstChild(${luaString(name + IMPORT_SUFFIX)})`,
-    `assert(old and new, "找不到旧表或新导入的表")`,
-    `if new.Source ~= old.Source then new:Destroy() return "ABORT: 主表已在 Studio 中改动，已丢弃导入；请重新导出并 sync" end`,
-    `old:Destroy()`,
-    `new.Name = ${luaString(name)}`,
-    `return "OK: 已替换 " .. new:GetFullName() .. "，语言模块 " .. #new:GetChildren()`,
-  ].join('\n');
+export function parseTableSnapshot(input: unknown): TableSnapshot {
+  const snapshot = record(input, 'snapshot');
+  const target = tableTarget(snapshot.placeId, snapshot.table);
+  if (!Array.isArray(snapshot.locales)) invalid('snapshot.locales must be an array.');
+  const locales = tableLocales(snapshot.locales);
+  const sourceLocale = locale(snapshot.sourceLocale);
+  const entries = rows(snapshot.entries).map(item => {
+    const row = record(item, 'entry');
+    return { ...identity(row), values: values(row.values, 'values', true) };
+  });
+  assertUniqueEntries(entries);
+  return { ...target, sourceLocale, locales, entries };
+}
+
+export function parseTablePatch(input: unknown, target: TableTarget): TablePatch {
+  const patch = record(input, 'patch');
+  if (patch.placeId !== undefined && patch.placeId !== target.placeId ||
+      patch.table !== undefined && patch.table !== target.table) {
+    invalid('The patch was prepared for a different Place or table.');
+  }
+  const entries = rows(patch.entries).map(item => {
+    const row = record(item, 'entry');
+    const entry = identity(row);
+    const newValues = values(row.values, 'values');
+    if (!Object.keys(newValues).length) invalid('Each patch entry must specify at least one translation.');
+    const expected = record(row.expected, 'expected');
+    for (const [code, text] of Object.entries(newValues)) {
+      if (!Object.hasOwn(expected, code) || expected[code] !== null && typeof expected[code] !== 'string') {
+        invalid(`expected.${code} must contain the exact old value or null for an absent translation.`);
+      }
+      const reason = checkTranslation(entry.source, text);
+      if (reason) invalid(`${JSON.stringify(entry.source)} (${code}): ${reason}.`);
+    }
+    if (Object.keys(expected).some(code => !Object.hasOwn(newValues, code))) invalid('expected and values must name the same locales.');
+    const expectedZh = row.expectedZh === undefined ? undefined : string(row.expectedZh, 'expectedZh');
+    return { ...entry, values: newValues, expected: expected as TableEdit['expected'], expectedZh };
+  });
+  assertUniqueEntries(entries);
+  return { ...target, entries };
+}
+
+export interface TableTranslation {
+  patch: TablePatch;
+  missing: number;
+  cached: number;
+  failures: (EntryIdentity & { locale: string; reason: string })[];
+}
+
+export async function translateTable(
+  snapshot: TableSnapshot, provider: TranslationProvider, options: TranslateOptions,
+): Promise<TableTranslation> {
+  if (!/^en(?:-|$)/.test(snapshot.sourceLocale)) invalid('Table translation requires an English source locale.');
+  const locales = snapshot.locales.filter(code => code !== CHINESE_LOCALE && code !== 'en' && code !== snapshot.sourceLocale);
+  const { placeId, table } = snapshot;
+  const result: TableTranslation = { patch: { placeId, table, entries: [] }, missing: 0, cached: 0, failures: [] };
+  const jobs: TranslationJob[] = [];
+  const entries = new Map<string, TableEntry>();
+  for (const entry of snapshot.entries) {
+    const missing = locales.filter(code => !entry.values[code]?.trim());
+    result.missing += missing.length;
+    if (!missing.length) continue;
+    const zh = entry.values[CHINESE_LOCALE];
+    if (!zh?.trim()) {
+      const { key, source, context } = entry;
+      result.failures.push(...missing.map(locale => ({ key, source, context, locale, reason: 'Simplified Chinese is missing' })));
+      continue;
+    }
+    const id = entryId(entry);
+    entries.set(id, entry);
+    jobs.push({ id, en: entry.source, zh, locales: missing });
+  }
+  if (!jobs.length) return result;
+  const outcome = await translate(provider, jobs, options);
+  result.cached = outcome.cached;
+  const edits = new Map<string, TableEdit>();
+  for (const row of outcome.translations) {
+    const id = row.jobId!;
+    const { key, source, context, values } = entries.get(id)!;
+    let edit = edits.get(id);
+    if (!edit) {
+      edit = { key, source, context, values: {}, expected: {}, expectedZh: values[CHINESE_LOCALE]! };
+      edits.set(id, edit);
+    }
+    edit.values[row.locale] = row.text;
+    edit.expected[row.locale] = values[row.locale] ?? null;
+  }
+  result.patch.entries = [...edits.values()];
+  for (const row of outcome.failures) {
+    const { key, source, context } = entries.get(row.jobId!)!;
+    result.failures.push({ key, source, context, locale: row.locale, reason: row.reason });
+  }
+  return result;
 }

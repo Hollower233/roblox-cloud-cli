@@ -85,10 +85,10 @@ export class DeepSeekClient {
 
 // ---- Translation ----
 
-export interface TranslationJob { en: string; zh: string; locales: string[] }
+export interface TranslationJob { id?: string; en: string; zh: string; locales: string[] }
 export interface TranslationOutcome {
-  translations: { en: string; locale: string; text: string }[];
-  failures: { en: string; locale: string; reason: string }[];
+  translations: { jobId?: string; en: string; locale: string; text: string }[];
+  failures: { jobId?: string; en: string; locale: string; reason: string }[];
   cached: number;
 }
 
@@ -113,6 +113,7 @@ export function checkTranslation(en: string, text: string): string | null {
   const tags = (s: string) => s.match(/<\/?[A-Za-z][^<>]*>/g) ?? [];
   if (multiset(holders(en)) !== multiset(holders(text))) return 'placeholders differ';
   if (multiset(tags(en)) !== multiset(tags(text))) return 'markup tags differ';
+  if ((en.match(/\r\n|\r|\n/g) ?? []).join('') !== (text.match(/\r\n|\r|\n/g) ?? []).join('')) return 'line breaks differ';
   return null;
 }
 /** Restore the source's exact leading/trailing whitespace. */
@@ -144,23 +145,30 @@ export class TranslationCache {
 }
 
 export interface TranslateOptions {
-  model: string; concurrency?: number; batchPairs?: number; languageGroup?: number;
+  model?: string; concurrency?: number; batchPairs?: number; languageGroup?: number;
   cache?: TranslationCache; signal?: AbortSignal; progress?: (done: number, total: number) => void;
 }
 
+export type TranslationProvider = DeepSeekClient | (() => Promise<{ client: DeepSeekClient; model: string }>);
+
 /** Batches consecutive entries × a group of languages per request and runs requests in parallel. */
-export async function translate(client: DeepSeekClient, jobs: TranslationJob[], options: TranslateOptions): Promise<TranslationOutcome> {
+export async function translate(provider: TranslationProvider, jobs: TranslationJob[], options: TranslateOptions): Promise<TranslationOutcome> {
   const outcome: TranslationOutcome = { translations: [], failures: [], cached: 0 };
   const pending: { job: TranslationJob; locales: string[] }[] = [];
   for (const job of jobs) {
     const need: string[] = [];
     for (const locale of job.locales) {
       const hit = options.cache?.get(job.en, job.zh, locale);
-      if (hit !== undefined && !checkTranslation(job.en, hit)) { outcome.translations.push({ en: job.en, locale, text: hit }); outcome.cached++; }
+      if (hit !== undefined && !checkTranslation(job.en, hit)) { outcome.translations.push({ ...(job.id === undefined ? {} : { jobId: job.id }), en: job.en, locale, text: hit }); outcome.cached++; }
       else need.push(locale);
     }
     if (need.length) pending.push({ job, locales: need });
   }
+  if (!pending.length) return outcome;
+  options.signal?.throwIfAborted();
+  const { client, model } = typeof provider === 'function'
+    ? await provider()
+    : { client: provider, model: options.model ?? FALLBACK_MODEL };
   const allLocales = [...new Set(pending.flatMap(row => row.locales))].sort();
   const groupSize = options.languageGroup ?? 12, maxPairs = options.batchPairs ?? 120;
   type Batch = { job: TranslationJob; locales: string[] }[];
@@ -182,7 +190,7 @@ export async function translate(client: DeepSeekClient, jobs: TranslationJob[], 
   const request = async (batch: Batch): Promise<Map<string, string>[]> => {
     const locales = [...new Set(batch.flatMap(row => row.locales))].sort();
     const user = JSON.stringify({ locales: Object.fromEntries(locales.map(code => [code, languageName(code)])), items: batch.map((row, i) => ({ id: String(i + 1), en: row.job.en, zh: row.job.zh, to: row.locales })) });
-    const d = await client.chatJson(options.model, SYSTEM, user) as any;
+    const d = await client.chatJson(model, SYSTEM, user) as any;
     const table = d && typeof d === 'object' && d.t && typeof d.t === 'object' ? d.t : {};
     return batch.map((_, i) => {
       const got = table[String(i + 1)], map = new Map<string, string>();
@@ -196,10 +204,10 @@ export async function translate(client: DeepSeekClient, jobs: TranslationJob[], 
     batch.forEach((row, i) => {
       for (const locale of row.locales) {
         const raw = results?.[i]?.get(locale);
-        const reason = raw === undefined ? 'missing in response' : checkTranslation(row.job.en, raw);
+        const reason = raw === undefined ? 'missing in response' : checkTranslation(row.job.en, edges(row.job.en, raw));
         if (reason) { retry.push({ job: row.job, locale, reason }); continue; }
         const text = edges(row.job.en, raw!);
-        outcome.translations.push({ en: row.job.en, locale, text });
+        outcome.translations.push({ ...(row.job.id === undefined ? {} : { jobId: row.job.id }), en: row.job.en, locale, text });
         fresh.push({ en: row.job.en, zh: row.job.zh, locale, text });
       }
     });
@@ -235,6 +243,6 @@ export async function translate(client: DeepSeekClient, jobs: TranslationJob[], 
     await Promise.all(Array.from({ length: Math.max(1, options.concurrency ?? 8) }, singleWorker));
     retries.push(...next);
   }
-  for (const row of retries) outcome.failures.push({ en: row.job.en, locale: row.locale, reason: row.reason });
+  for (const row of retries) outcome.failures.push({ ...(row.job.id === undefined ? {} : { jobId: row.job.id }), en: row.job.en, locale: row.locale, reason: row.reason });
   return outcome;
 }

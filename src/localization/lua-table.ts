@@ -2,7 +2,6 @@ import { AppError } from '../core/errors.js';
 
 /** Minimal Lua tokenizer for data modules: `return { ... }` with string, number and identifier fields only. */
 type Token = { type: 'string' | 'number' | 'name' | 'punct' | 'eof'; value: string; at: number };
-export const MASTER_NAME = '本地化表';
 const bad = (module: string, at: number, message: string) => new AppError('ARGUMENT_ERROR', `${module}: ${message} (offset ${at}).`);
 
 function longBracket(source: string, at: number): { level: number; end: number } | null {
@@ -80,32 +79,6 @@ class Parser {
   separator() { if (!this.accept(',')) this.accept(';'); }
 }
 
-export interface MasterRow { en: string; zh: string }
-
-/** Parse the master module: `return { { en = "...", zh = "..." }, ... }`. */
-export function parseMasterSource(source: string, module = MASTER_NAME): MasterRow[] {
-  const p = new Parser(tokenize(source, module), module);
-  p.expect('name', 'return'); p.expect('punct', '{');
-  const rows: MasterRow[] = [], seen = new Set<string>();
-  while (!p.accept('}')) {
-    const start = p.expect('punct', '{');
-    const row: Partial<MasterRow> = {};
-    while (!p.accept('}')) {
-      const key = p.expect('name').value; p.expect('punct', '=');
-      const value = p.expect('string').value;
-      if (key === 'en' || key === 'zh') row[key] = value;
-      p.separator();
-    }
-    if (typeof row.en !== 'string' || typeof row.zh !== 'string') throw bad(module, start.at, 'row needs en and zh');
-    if (seen.has(row.en)) throw bad(module, start.at, `duplicate source ${JSON.stringify(row.en)}`);
-    seen.add(row.en);
-    rows.push(row as MasterRow);
-    p.separator();
-  }
-  p.expect('eof');
-  return rows;
-}
-
 export type RecordValue = string | number;
 export interface RecordRow { fields: Record<string, RecordValue>; at: number }
 
@@ -133,23 +106,6 @@ export function parseRecordRows(source: string, module: string): RecordRow[] {
   return rows;
 }
 
-/** Parse a language module: `return { ["source"] = "translation", ... }`. */
-export function parseLanguageSource(source: string, module: string): Map<string, string> {
-  const p = new Parser(tokenize(source, module), module);
-  p.expect('name', 'return'); p.expect('punct', '{');
-  const map = new Map<string, string>();
-  while (!p.accept('}')) {
-    const start = p.expect('punct', '[');
-    const key = p.expect('string').value; p.expect('punct', ']'); p.expect('punct', '=');
-    const value = p.expect('string').value;
-    if (map.has(key)) throw bad(module, start.at, `duplicate source ${JSON.stringify(key)}`);
-    map.set(key, value);
-    p.separator();
-  }
-  p.expect('eof');
-  return map;
-}
-
 export function luaString(value: string): string {
   let out = '"';
   for (const ch of value) {
@@ -163,20 +119,4 @@ export function luaString(value: string): string {
     else out += ch;
   }
   return out + '"';
-}
-
-export function languageModuleSource(locale: string, rows: [string, string][]): string {
-  return `--[[\n本地化表.${locale}：英文原文 → ${locale} 译文。由 rbx localization sync 生成，顺序与主表一致。\n- 可直接修改译文，sync 会保留并推送到云端；主表中已删除或改动的原文会被清理。\n- 只新增原文时请改主表，不要在这里加行。\n]]\nreturn {\n${rows.map(([en, text]) => `\t[${luaString(en)}] = ${luaString(text)},\n`).join('')}}\n`;
-}
-
-/** Header of the hand-maintained master module; `rbx localization init` writes it with an empty table. */
-export const MASTER_HEADER = String.raw`--[[
-${MASTER_NAME}：英文原文 → 简体中文，游戏本地化文本的主数据。
-- 每条一行 { en = "...", zh = "..." }；en 与界面实际显示的原文逐字一致（含首尾空格、换行、{a:int} 等占位符），不可重复。
-- 新条目插在表最前面（return { 之后）；字符串只转义 \\ \" \n \r \t 与控制字符，其余原样写入。
-- 读取用 require(本模块:Clone()) 绕过 require 缓存；导出 JSON 用 HttpService:JSONEncode(结果)。
-]]`;
-
-export function masterModuleSource(rows: MasterRow[] = []): string {
-  return `${MASTER_HEADER}\nreturn {\n${rows.map(row => `\t{ en = ${luaString(row.en)}, zh = ${luaString(row.zh)} },\n`).join('')}}\n`;
 }

@@ -518,48 +518,41 @@ await localization.write('123', { ja: { title: 'サンプルゲーム' } }, {
 
 默认离线测试位于 `tests/localization.test.ts`。显式设置 `RBX_LIVE_LOCALIZATION_UNIVERSE` 后运行 `npm run test:live:localization`，仅验证真实读取与只读预览，不写游戏、不保存真实响应到仓库。
 
-## 游戏内本地化表（Studio 本地化表 → DeepSeek → 云端）
+## 游戏内本地化表
 
-本地化表以 Studio 中的 ModuleScript 为唯一来源：主表 `本地化表` 存英文原文和简体中文（由人或 Agent 维护，CLI 只读），子模块 `本地化表.<语言代码>` 存其他语言（每行 `["英文原文"] = "译文",`，顺序与主表一致，由 CLI 生成）。英文原文逐字作为主键。云端只接收单向推送：只处理无 Key、无 Context 的通用条目，只新增和修改，从不删除。
+游戏内译文保存在 Studio 的原生 `LocalizationTable` 中，随 Place 发布。使用 `rbx localization table` 为编辑态 Studio 生成读取和写入 Luau，Agent 将 `--json` 的 `data.studioLuau` 交给 `robloxstudio-mcp` 的 `execute_luau`，并核对 Studio 输出。示例采用名称 `GameTranslations`。
 
 ```bash
-# 新游戏：源语言设为 en，启用 18 种固定语言并开启自动翻译，使用翻译表、开启自动采集文本、关闭自动删除（幂等）
-rbx localization enable "Example Production" --dry-run
-rbx localization enable 123 456
+# 汇总条数、缺译及每种语言的覆盖
+rbx --json localization table read --place 123 --table GameTranslations
 
-# DeepSeek：Key 用 DPAPI 保存（DEEPSEEK_API_KEY 优先）；每次运行都会拉取模型列表
-rbx deepseek auth set
-rbx deepseek models
-rbx deepseek config --model deepseek-flash
+# 从 Studio 返回指定原文的词条，包括不同 Key 或 Context 的匹配项
+rbx --json localization table read --place 123 --table GameTranslations --source "My Booth"
+rbx --json localization table read --place 123 --table GameTranslations --missing
 
-# 新项目还没有本地化表：生成空主表（默认 ./本地化表.rbxm，已存在需 --force），
-# 用 import_rbxm 导入到 game.ServerStorage["项目文档"]（不存在先建 Folder）后按表头写条目
-rbx localization init --out ./本地化表.rbxm
-
-# Agent 先用 robloxstudio-mcp 的 export_rbxm 导出 game.ServerStorage["项目文档"]["本地化表"]
-rbx localization sync 123 456 --source ./本地化表.rbxm --dry-run
-rbx localization sync 123 456 --source ./本地化表.rbxm
-rbx localization sync 123 --source ./本地化表.rbxm --retranslate "Play Again"
-
-# 首次接入：把某个游戏云端已有的译文填入本地空位（--human-only 只要人工译文）
-rbx localization import 123 --source ./本地化表.rbxm
-rbx localization export --source ./本地化表.rbxm --out ./localization.json
-rbx localization show "Leave" --source-file ./本地化表.rbxm
+# 将上一步 Studio 输出中的 JSON 保存为 missing.json，再补译并生成待写入的差量
+rbx --json localization table translate --file missing.json --out translations.patch.json
+rbx --json localization table write --place 123 --table GameTranslations --file translations.patch.json --dry-run
+rbx --json localization table write --place 123 --table GameTranslations --file translations.patch.json
 ```
 
-`sync` 的流程：
-1. 每个目标游戏必须已开启本地化（源语言 en、使用翻译表），否则报错并提示先运行 `enable`，不翻译、不写入。
-2. 读取各游戏已启用语言的并集，与 18 种固定语言取交集，找出本地缺失的「原文 × 语言」。zh-hans 来自主表，不翻译。白名单外已启用的语言留在线上，云端译文保留，但不再翻译和推送。
-3. DeepSeek 翻译：连续原文 × 一组语言为一批（默认每批不超过 120 个译文，12 种语言一组），默认 8 路并发（`--concurrency`）。逐条校验占位符（`{a:int}`）和标签（`<font>`），不合格的单独重试两次，仍失败则不写入并列在 warnings。译文同时写入应用数据目录 `localization-cache/translations.jsonl`，中断后重跑不重复付费。
-4. 写出本地化表 `.rbxm`（默认 `<source>.synced.rbxm`），根模块名为 `本地化表__sync`；不再被主表引用的旧译文会被清理，白名单外的语言子模块会被删除，删除的语言和译文数会输出（`--dry-run` 只预览）。`--out` 指向源文件时会覆盖原表。
-5. 逐个游戏推送该游戏启用语言中与云端不一致的译文：推送前把云端全部条目备份到 `localization-backups/`，按 `maxEntriesPerUpdate` 分批；一个游戏失败不影响其他游戏。原文超过 `maxSourceLength`（目前 300）会被跳过并报告。
-6. 输出摘要：各语言新译文数、模型和 token 用量、每个游戏新增/修改/被拒数量。
+`read` 默认检查 17 种译文语言。用 `--locales <code...>` 指定项目的语言范围。`--source` 按原文逐字匹配，`--missing` 输出对应的缺译词条。`translate` 按读取结果指定的语言补译，以英文源文及已有的简中作输入，校验占位符、富文本标签和换行。成功项输出为差量，失败项列于 warnings（退出码 3）。缓存复用 `localization-cache/translations.jsonl`，仅有未命中项时才加载 DeepSeek Key、解析模型和发请求。凭证配置使用 `rbx deepseek auth set`、`rbx deepseek models` 和 `rbx deepseek config`。
 
-`enable` 只处理 18 种固定语言，已启用的其他语言及其自动翻译开关保持原样。`import` 只导入固定语言，其他语言计入跳过统计。
+手动加词或改词可直接提供 UTF-8 JSON。`key` 和 `context` 缺省为空，`source` 保留原文空白、换行和大小写。`values` 只写需要改的语言。`expected` 填逐字匹配的旧值，`null` 表示该语言在词条中缺席。
 
-写回 Studio：`import_rbxm` 把输出文件导入到本地化表所在的父级，再用 `execute_luau` 执行输出中的 `studioSwapLuau`。它比较新旧主表的 Source，一致才删除旧表并把新表改名，不一致则丢弃导入，需要重新导出并 sync。
+```json
+{
+  "entries": [
+    {
+      "source": "My Booth",
+      "values": { "zh-hans": "我的摊位" },
+      "expected": { "zh-hans": null }
+    }
+  ]
+}
+```
 
-`.rbxm` 读写由 `src/localization/rbxm.ts` 实现（读取 LZ4/ZSTD，写出使用 ZSTD），只保留 ModuleScript 的 Name 和 Source。
+Studio 写入前核对 Place ID、编辑态、表名和整批旧值，已符合的值跳过，有冲突时返回 `status=conflict`，整批等待重新读取。自动生成的补译差量也校验用于翻译的简中提示。`--dry-run` 在 Studio 执行时只返回变更计数。以 Studio 回读返回的 `status=verified` 作为写入成功依据。
 
 ## Configs 与 A/B 实验
 

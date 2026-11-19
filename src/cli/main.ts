@@ -124,7 +124,7 @@ for (const action of ['grant', 'revoke'] as const) {
     });
 }
 
-const localization = program.command('localization').description('Game-info translations, and the in-game localization table (init/enable/sync/import/export/show)');
+const localization = program.command('localization').description('Game title and description translations, and native Studio localization tables');
 async function localizationClient(input: string) {
   const local = store(), config = await local.config();
   const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;
@@ -516,7 +516,7 @@ registerPlaces(program, cloudContext);
 registerEvents(program, cloudContext);
 registerDeveloperProducts(program, cloudContext);
 registerExperiments(program, cloudContext);
-registerLocalizationTable(program, localization, cloudContext);
+registerLocalizationTable(program, localization, abort.signal);
 
 const servers = program.command('servers').description('Manage live game servers');
 servers.command('status').description('Read active servers and the estimated count affected by an outdated-server restart')

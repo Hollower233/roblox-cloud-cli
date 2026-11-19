@@ -108,7 +108,7 @@
 
 ## 游戏标题与简介本地化
 
-- 固定 18 种语言：`src/localization/languages.ts`，`read/write/enable/sync/import` 都只看这份清单；`localization read --all` 保留实时语言目录。
+- 固定 18 种语言：`src/localization/languages.ts`，标题和简介的 `read/write` 使用这份清单；`localization read --all` 保留实时语言目录。
 - 标题简介读写与支持语言管理：`src/localization/game-info.ts`。
 - 源语言标题／简介由 `localization write` 自动定位 Universe 的 `rootPlace`，通过 Cloud Update Place 修改；不要直接 PATCH Universe 的 `displayName`。其他语言继续走本地化接口。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
@@ -152,10 +152,9 @@
 
 ## 游戏内本地化表
 
-- Studio 本地化表 `.rbxm` 读写：`src/localization/rbxm.ts`、`src/localization/lua-table.ts`、`src/localization/table.ts`；主表（en/zh）只读，语言子模块由 CLI 生成。
-- 云端翻译表、开启本地化：`src/localization/cloud-table.ts`；同步与首次导入：`src/localization/sync.ts`；DeepSeek 客户端与批量翻译：`src/translation/deepseek.ts`。
-- CLI：`localization init/enable/sync/import/export/show`、`deepseek auth/models/config`（`src/cli/commands/localization-table.ts`）；SDK 导出：`src/index.ts`。
-- 云端只增改通用条目（无 Key、无 Context），从不发送 delete；`sync` 只处理已启用语言与固定清单的交集，写出 `.rbxm` 时删除清单外语言；推送前备份到 `localization-backups/table-*.json`。DeepSeek Key 存 `deepseek.dpapi`，模型配置 `deepseek.json`，译文缓存 `localization-cache/translations.jsonl`。
+- 原生表的差量、缺译与补译：`src/localization/table.ts`。编辑态 Studio 读写脚本：`src/localization/studio-table.ts`。
+- CLI：`localization table read/write/translate`、`deepseek auth/models/config`（`src/cli/commands/localization-table.ts`）。读写脚本由 Agent 通过 `robloxstudio-mcp` 执行。SDK 导出：`src/index.ts`。
+- DeepSeek Key 存 `deepseek.dpapi`，模型配置 `deepseek.json`，译文缓存 `localization-cache/translations.jsonl`。编辑态读写和命中缓存的补译无需联网。
 - 离线验证：`tests/localization-table.test.ts`。
 
 ## 打开 Studio 项目

@@ -73,8 +73,7 @@ const features: PermissionFeature[] = [
   feature('icon-countdown', '自动生成并运行图标倒计时', ['icon countdown', 'icon now', 'icon restore', 'icon resume'], [...iconWrite, 'legacy-asset:manage'], ['旧文件夹模式不下载底图，无需 legacy-asset:manage。素材的 Owner 范围需要单独核实。']),
   feature('localization-read', '读取游戏标题和简介', ['localization read'], ['universe:read']),
   feature('localization-write', '修改游戏标题和简介', ['localization write'], ['universe:read', 'legacy-universe:manage', 'universe.place:write'], ['仅修改其他语言时无需 universe.place:write；源语言通过根 Place 修改。']),
-  feature('localization-table', '管理云端游戏内本地化表', ['localization enable', 'localization sync', 'localization import'], ['legacy-universe:manage'], ['本地 init/export/show 不需 Roblox 权限；DeepSeek 翻译另需独立 Key。']),
-  feature('local', '本机及公开查询功能', ['auth permissions', 'universe list', 'player', 'cache clear', 'studio open', 'studio patch', 'studio close', 'studio list', 'studio save', 'studio publish', 'icon status', 'localization init', 'localization export', 'localization show', 'events categories', 'events rules'], [], ['本地缓存、玩家清单及 Studio 会话操作不需要 Roblox API Key。']),
+  feature('local', '本机及公开查询功能', ['auth permissions', 'universe list', 'player', 'cache clear', 'studio open', 'studio patch', 'studio close', 'studio list', 'studio save', 'studio publish', 'icon status', 'localization table read', 'localization table write', 'localization table translate', 'events categories', 'events rules'], [], ['本地缓存、玩家清单及 Studio 会话操作无需 Roblox API Key。游戏内缺译通过 DeepSeek 补齐时使用独立 Key。']),
 ];
 
 /** Returns independent copies so SDK consumers cannot mutate the built-in catalog. */
