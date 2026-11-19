@@ -682,7 +682,6 @@ SDK 对应调用为 `restartUniverseServers(http, '123', { placeIds: ['456'], al
 rbx studio open "Example Test"            # 默认打开 Internal Studio
 rbx studio open "<UniverseId>"           # Universe ID
 rbx studio open --place "<RootPlaceId>"
-rbx studio open "Example Test" --stock   # 官方 RobloxStudioBeta.exe
 rbx studio patch                      # 只生成/复用 Internal 副本，不启动
 rbx --json studio patch --inspect     # 只定位 Internal helper 与保护 guard，不写盘
 rbx --json studio open "Example Test" --timeout 180
@@ -698,8 +697,8 @@ rbx studio close --all                # 软关闭全部编辑会话（不可与 
 
 - 不需要 API Key。优先用本地游戏目录的 `rootPlaceId`；目录没有时调用公开接口 `develop.roblox.com/v1/universes/{id}`（根 Place）或 `apis.roblox.com/universes/v1/places/{id}/universe`（Place 所属 Universe），私密游戏同样可用。重名游戏报错并列出候选 Universe ID。
 - 同一 Place 已有编辑会话时不重复启动，只切到前台并返回 `alreadyOpen: true`。按进程命令行的 `-task EditPlace -placeId` 识别，Team Test 的服务端/客户端进程不计入；窗口标题是本地化名，不用于匹配。
-- 新启动时取 `%LOCALAPPDATA%\Roblox\Versions` 下修改时间最新的 `RobloxStudioBeta.exe`（不读注册表协议，注册表可能指向旧版本）。默认复制为同目录 `RobloxStudioBeta_INTERNAL.exe`，改写 8 字节权限 helper，并跳过使用同一组标志位的零售版保护 guard；只开 helper 会在加载 Internal 专用路径后触发异常。官方 exe 不会被覆盖，`--stock` 才启动官方副本。参数为 `-task EditPlace -placeId <P> -universeId <U>`。这是 Studio 自身使用但未公开文档化的参数，Roblox 改版可能失效。
-- 同一 Place 已有官方会话时，默认 `studio open` 会报错并要求先关闭或改用 `--stock`；已有 Internal 会话则只切前台。Internal 身份优先按进程命令行中的 `RobloxStudioBeta_INTERNAL.exe` 判断，不依赖窗口一定出现 `[Internal]` 后缀。
+- 新启动时取 `%LOCALAPPDATA%\Roblox\Versions` 下修改时间最新的 `RobloxStudioBeta.exe`（不读注册表协议，注册表可能指向旧版本），只把它作为生成 Internal 副本的源文件。CLI 与 SDK 只启动同目录的 `RobloxStudioBeta_INTERNAL.exe`，不提供启动官方原版的选项。补丁改写 8 字节权限 helper，并跳过使用同一组标志位的零售版保护 guard；只开 helper 会在加载 Internal 专用路径后触发异常。官方 exe 不会被覆盖。启动参数为 `-task EditPlace -placeId <P> -universeId <U>`；这是 Studio 自身使用但未公开文档化的参数，Roblox 改版可能失效。
+- 同一 Place 已有官方会话时，`studio open` 会报错并要求先关闭；已有 Internal 会话则只切前台。Internal 身份优先按进程命令行中的 `RobloxStudioBeta_INTERNAL.exe` 判断，不依赖窗口一定出现 `[Internal]` 后缀。
 - 默认等待窗口标题从 `Place1 - Roblox Studio` 占位标题变为实际项目标题（或出现 `[Internal]`）后视为加载完成（`ready: true`），默认超时 120 秒，超时返回 `TIMEOUT`。加载完成不代表 MCP 插件已连接，连接状态以 MCP 为准。补丁失败返回 `STUDIO_PATCH_FAILED`，不会回落到官方 exe。
 - 模块：`src/studio/launch.ts`、`src/studio/internal.ts`；SDK：`resolveStudioTarget`、`openStudio`、`ensureInternalStudio`、`inspectInternalPatch`、`listStudioSessions`、`windowsStudioSystem`。离线测试：`tests/studio.test.ts`、`tests/studio-internal.test.ts`。Studio 更新后的定位链、失败扩匹配与提权验证见 [Internal 补丁维护](studio-internal.md)。
 ## Studio Publish As（Windows）

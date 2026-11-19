@@ -56,7 +56,7 @@ rbx studio open "<游戏名或 UniverseId>"
 rbx studio list
 ```
 
-`list` 的进程名同时认 `RobloxStudioBeta` 和 `RobloxStudioBeta_INTERNAL`。Internal 身份优先按进程命令行中的精确 exe 名识别；窗口标题可能因版本或本地化不显示 `[Internal]`。已有同 Place 官方会话时，默认 open 会报错，需先 close 或显式 `--stock`。
+`list` 的进程名同时认 `RobloxStudioBeta` 和 `RobloxStudioBeta_INTERNAL`，以便发现并阻止同 Place 的官方会话冲突；`studio open` 只启动 Internal 副本，不提供原版启动选项。Internal 身份优先按进程命令行中的精确 exe 名识别；窗口标题可能因版本或本地化不显示 `[Internal]`。已有同 Place 官方会话时，必须先关闭再启动 Internal。
 
 ## 验证提权
 

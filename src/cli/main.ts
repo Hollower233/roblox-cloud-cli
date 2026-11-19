@@ -543,17 +543,15 @@ servers.command('restart').description('Submit a restart for one place or all ac
 const studio = program.command('studio').description('Open places in local Roblox Studio (Windows)');
 studio.command('open [game]').description('Open a game\'s root place for editing in Internal Studio; reuses an open Internal session')
   .option('--place <placeId>', 'Open this exact Place ID instead of a root place', id)
-  .option('--stock', 'Launch official RobloxStudioBeta.exe instead of the Internal copy')
   .option('--no-wait', 'Return right after launching instead of waiting for the place to load')
   .option('--timeout <seconds>', 'Maximum seconds to wait for loading', (v: string) => Number(id(v)), 120)
-  .action(async (game: string | undefined, options: { place?: string; stock?: boolean; wait: boolean; timeout: number }) => {
+  .action(async (game: string | undefined, options: { place?: string; wait: boolean; timeout: number }) => {
     const local = store(), config = await local.config();
     const catalog = config.currentUserId ? await local.catalog(config.currentUserId) : null;
     const target = await resolveStudioTarget(new HttpClient({ signal: abort.signal }), { game, place: options.place }, catalog?.games);
-    const result = await openStudio(windowsStudioSystem(), target, { wait: options.wait, timeoutMs: options.timeout * 1000, signal: abort.signal, stock: Boolean(options.stock), home: local.home, progress: m => { if (!json()) process.stderr.write(clean(m) + '\n'); } });
+    const result = await openStudio(windowsStudioSystem(), target, { wait: options.wait, timeoutMs: options.timeout * 1000, signal: abort.signal, home: local.home, progress: m => { if (!json()) process.stderr.write(clean(m) + '\n'); } });
     const state = result.alreadyOpen ? '已打开（已切到前台）' : result.ready ? '已加载' : '已启动，未等待加载';
-    const kind = result.internal ? 'Internal' : '官方';
-    emit(result, json(), `${clean(result.name ?? result.title ?? '')}\nPlace ${result.placeId}  Universe ${result.universeId}\nPID ${result.pid}  ${kind}  ${state}  ${(result.elapsedMs / 1000).toFixed(1)}s`);
+    emit(result, json(), `${clean(result.name ?? result.title ?? '')}\nPlace ${result.placeId}  Universe ${result.universeId}\nPID ${result.pid}  Internal  ${state}  ${(result.elapsedMs / 1000).toFixed(1)}s`);
   });
 studio.command('patch').description('Create or reuse RobloxStudioBeta_INTERNAL.exe for the newest Studio build, without launching it')
   .option('--inspect', 'Locate the Internal helper in the official exe without writing a copy')

@@ -15,7 +15,7 @@ export interface OpenResult extends StudioTarget {
   ready: boolean;
   title?: string;
   executable?: string;
-  internal?: boolean;
+  internal: true;
   patch?: EnsureInternalResult;
   elapsedMs: number;
 }
@@ -26,6 +26,8 @@ export interface StudioSystem {
   localAppData?: string;
   /** Version directories containing RobloxStudioBeta.exe, with that file's mtime. */
   studioBuilds(versionsDir: string): Promise<{ executable: string; mtimeMs: number }[]>;
+  /** Create or reuse the Internal copy and record its local setup. */
+  prepareInternal(stock: string, home?: string): Promise<EnsureInternalResult>;
   /** Raw Studio editor processes, including the Internal copy. */
   processes(): Promise<{ pid: number; commandLine: string; title: string; name?: string }[]>;
   launch(executable: string, args: string[]): Promise<number>;
@@ -112,37 +114,28 @@ export interface OpenOptions {
   pollMs?: number;
   signal?: AbortSignal;
   progress?: (message: string) => void;
-  /** Official Studio binary. Default is the Internal copy. */
-  stock?: boolean;
   home?: string;
 }
-/** Open the place for editing, reusing an existing edit session of the same place. */
+/** Open the place for editing in Internal Studio, reusing an existing Internal session of the same place. */
 export async function openStudio(system: StudioSystem, target: StudioTarget, options: OpenOptions = {}): Promise<OpenResult> {
   requireWindows(system);
   const started = system.now(), wait = options.wait ?? true, timeoutMs = options.timeoutMs ?? 120_000, pollMs = options.pollMs ?? 2_000;
-  const wantInternal = options.stock !== true;
   const existing = (await listStudioSessions(system)).find(p => p.placeId === target.placeId);
   if (existing) {
     const alreadyInternal = existing.internal === true || isInternalTitle(existing.title);
-    if (!wantInternal || alreadyInternal) {
+    if (alreadyInternal) {
       await system.focus(existing.pid).catch(() => undefined);
-      return { ...target, pid: existing.pid, alreadyOpen: true, ready: isReadyTitle(existing.title), internal: alreadyInternal, ...(existing.title ? { title: existing.title } : {}), elapsedMs: system.now() - started };
+      return { ...target, pid: existing.pid, alreadyOpen: true, ready: isReadyTitle(existing.title), internal: true, ...(existing.title ? { title: existing.title } : {}), elapsedMs: system.now() - started };
     }
-    throw new AppError('ARGUMENT_ERROR', `Place ${target.placeId} is already open in official Studio (pid ${existing.pid}). Close it first, or pass --stock.`);
+    throw new AppError('ARGUMENT_ERROR', `Place ${target.placeId} is already open in official Studio (pid ${existing.pid}). Close it before opening the Internal session.`);
   }
   const stock = await findStudioExecutable(system);
-  let executable = stock;
-  let patch: EnsureInternalResult | undefined;
-  if (wantInternal) {
-    options.progress?.('Preparing Internal Studio');
-    patch = await ensureInternalStudio(stock);
-    executable = patch.executable;
-    if (system.localAppData) await enableElevatedCapabilities(system.localAppData);
-    if (options.home) await recordPatchReceipt(options.home, patch);
-  }
+  options.progress?.('Preparing Internal Studio');
+  const patch = await system.prepareInternal(stock, options.home);
+  const executable = patch.executable;
   let pid = await system.launch(executable, ['-task', 'EditPlace', '-placeId', target.placeId, '-universeId', target.universeId]);
   const result = (ready: boolean, title?: string): OpenResult => ({
-    ...target, pid, alreadyOpen: false, ready, executable, internal: wantInternal, ...(patch ? { patch } : {}),
+    ...target, pid, alreadyOpen: false, ready, executable, internal: true, patch,
     ...(title ? { title } : {}), elapsedMs: system.now() - started,
   });
   if (!wait) return result(false);
@@ -151,7 +144,7 @@ export async function openStudio(system: StudioSystem, target: StudioTarget, opt
     if (options.signal?.aborted) throw new AppError('CANCELLED', 'Operation cancelled.');
     await system.sleep(pollMs);
     // The launched process may hand off to another one, so match by place rather than PID.
-    const session = (await listStudioSessions(system)).find(p => p.placeId === target.placeId);
+    const session = (await listStudioSessions(system)).find(p => p.placeId === target.placeId && (p.internal === true || isInternalTitle(p.title)));
     if (session) { pid = session.pid; if (isReadyTitle(session.title)) return result(true, session.title); }
   }
   throw new AppError('TIMEOUT', `Studio started (pid ${pid}) but place ${target.placeId} did not finish loading within ${Math.round(timeoutMs / 1000)}s.`);
@@ -217,6 +210,12 @@ export function windowsStudioSystem(): StudioSystem {
         try { builds.push({ executable, mtimeMs: (await stat(executable)).mtimeMs }); } catch { /* not a Studio build */ }
       }
       return builds;
+    },
+    async prepareInternal(stock, home) {
+      const patch = await ensureInternalStudio(stock);
+      if (process.env.LOCALAPPDATA) await enableElevatedCapabilities(process.env.LOCALAPPDATA);
+      if (home) await recordPatchReceipt(home, patch);
+      return patch;
     },
     async processes() {
       const names = STUDIO_PROCESS_NAMES.map(n => `'${n}.exe'`).join(',');

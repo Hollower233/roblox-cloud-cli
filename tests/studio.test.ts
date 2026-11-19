@@ -11,6 +11,14 @@ function fakeSystem(overrides: Partial<StudioSystem> & { rows?: Row[][] } = {}) 
   const system: StudioSystem = {
     platform: 'win32', localAppData: 'C:\\L',
     studioBuilds: async () => [{ executable: 'C:\\L\\old\\RobloxStudioBeta.exe', mtimeMs: 1 }, { executable: 'C:\\L\\new\\RobloxStudioBeta.exe', mtimeMs: 9 }],
+    prepareInternal: async stock => ({
+      stock,
+      executable: stock.replace(/RobloxStudioBeta\.exe$/i, 'RobloxStudioBeta_INTERNAL.exe'),
+      reused: false,
+      sourceSha256: 'source',
+      outputSha256: 'output',
+      plan: { markerRva: 1, functionRva: 2, fileOffset: 3, originalBytes: '00', patchedBytes: '01', guardRva: 4, guardFileOffset: 5, guardOriginalBytes: '02', guardPatchedBytes: '03' },
+    }),
     processes: async () => frames[Math.min(call++, frames.length - 1)]!,
     launch: async (exe, args) => { launched.push([exe, ...args]); return 500; },
     focus: async pid => { focused.push(pid); },
@@ -23,6 +31,7 @@ function fakeSystem(overrides: Partial<StudioSystem> & { rows?: Row[][] } = {}) 
   return { system, launched, focused, closed, killed };
 }
 const edit = (pid: number, placeId: string, title = ''): Row => ({ pid, commandLine: `"C:\\x\\RobloxStudioBeta.exe" -task EditPlace -universeId 7 -placeId ${placeId}`, title });
+const internalEdit = (pid: number, placeId: string, title = ''): Row => ({ pid, commandLine: `"C:\\x\\RobloxStudioBeta_INTERNAL.exe" -task EditPlace -universeId 7 -placeId ${placeId}`, title });
 const http = (routes: Record<string, unknown>) => new HttpClient({ intervalMs: 0, fetch: (async (url: string | URL) => {
   const body = routes[String(url)];
   return body === undefined ? new Response('{}', { status: 404 }) : Response.json(body);
@@ -41,15 +50,9 @@ test('the newest Studio build is chosen and non-Windows is rejected', async () =
   await assert.rejects(findStudioExecutable(fakeSystem({ platform: 'linux' }).system), (e: AppError) => e.code === 'UNSUPPORTED_PLATFORM');
 });
 test('an already open Internal place is focused instead of launched again', async () => {
-  const { system, launched, focused } = fakeSystem({ rows: [[edit(42, '100', 'X - Roblox Studio [Internal]')]] });
+  const { system, launched, focused } = fakeSystem({ rows: [[internalEdit(42, '100', 'X - Roblox Studio')]] });
   const result = await openStudio(system, { placeId: '100', universeId: '7' });
   assert.equal(result.alreadyOpen, true); assert.equal(result.pid, 42); assert.equal(result.ready, true); assert.equal(result.internal, true);
-  assert.deepEqual(launched, []); assert.deepEqual(focused, [42]);
-});
-test('an already open official place is reused only with --stock', async () => {
-  const { system, launched, focused } = fakeSystem({ rows: [[edit(42, '100', 'X - Roblox Studio')]] });
-  const result = await openStudio(system, { placeId: '100', universeId: '7' }, { stock: true });
-  assert.equal(result.alreadyOpen, true); assert.equal(result.internal, false);
   assert.deepEqual(launched, []); assert.deepEqual(focused, [42]);
 });
 test('ready titles accept the Internal suffix', () => {
@@ -59,21 +62,21 @@ test('ready titles accept the Internal suffix', () => {
   assert.equal(isReadyTitle('Place1 - Roblox Studio'), false);
 });
 test('launch passes EditPlace arguments and waits for the loaded title, following PID hand-off', async () => {
-  const { system, launched } = fakeSystem({ rows: [[], [edit(77, '100', 'Roblox Studio')], [edit(77, '100', 'Example Test - Roblox Studio')]] });
-  const result = await openStudio(system, { placeId: '100', universeId: '7' }, { pollMs: 1000, stock: true });
-  assert.deepEqual(launched, [['C:\\L\\new\\RobloxStudioBeta.exe', '-task', 'EditPlace', '-placeId', '100', '-universeId', '7']]);
+  const { system, launched } = fakeSystem({ rows: [[], [internalEdit(77, '100', 'Roblox Studio')], [internalEdit(77, '100', 'Example Test - Roblox Studio')]] });
+  const result = await openStudio(system, { placeId: '100', universeId: '7' }, { pollMs: 1000 });
+  assert.deepEqual(launched, [['C:\\L\\new\\RobloxStudioBeta_INTERNAL.exe', '-task', 'EditPlace', '-placeId', '100', '-universeId', '7']]);
   assert.equal(result.ready, true); assert.equal(result.pid, 77); assert.equal(result.title, 'Example Test - Roblox Studio');
-  assert.equal(result.internal, false);
+  assert.equal(result.internal, true);
 });
 test('an official session is not reused when Internal Studio is requested', async () => {
   const { system, launched } = fakeSystem({ rows: [[edit(42, '100', 'X - Roblox Studio')]] });
-  await assert.rejects(openStudio(system, { placeId: '100', universeId: '7' }), (e: AppError) => e.code === 'ARGUMENT_ERROR' && e.message.includes('--stock'));
+  await assert.rejects(openStudio(system, { placeId: '100', universeId: '7' }), (e: AppError) => e.code === 'ARGUMENT_ERROR' && e.message.includes('Close it'));
   assert.deepEqual(launched, []);
 });
 test('no-wait returns immediately and a stuck load times out', async () => {
-  const quick = await openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { wait: false, stock: true });
+  const quick = await openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { wait: false });
   assert.equal(quick.ready, false); assert.equal(quick.pid, 500);
-  await assert.rejects(openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { timeoutMs: 5000, pollMs: 1000, stock: true }), (e: AppError) => e.code === 'TIMEOUT');
+  await assert.rejects(openStudio(fakeSystem().system, { placeId: '100', universeId: '7' }, { timeoutMs: 5000, pollMs: 1000 }), (e: AppError) => e.code === 'TIMEOUT');
 });
 test('targets resolve from the catalog first, then public endpoints', async () => {
   const games = [{ universeId: '7', name: 'Example Test', rootPlaceId: '100' }, { universeId: '8', name: 'Dup' }, { universeId: '9', name: 'dup' }];

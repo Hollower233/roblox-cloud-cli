@@ -160,9 +160,9 @@
 
 ## 打开 Studio 项目
 
-- 启动与会话识别：`src/studio/launch.ts`；Internal 补丁：`src/studio/internal.ts`。命令 `studio open [game] [--place <id>] [--stock] [--no-wait] [--timeout <s>]`、`studio patch`、`studio list`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅 Windows，不需要 API Key。
+- 启动与会话识别：`src/studio/launch.ts`；Internal 补丁：`src/studio/internal.ts`。命令 `studio open [game] [--place <id>] [--no-wait] [--timeout <s>]`、`studio patch`、`studio list`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅 Windows，不需要 API Key；CLI 与 SDK 只启动 Internal Studio，不提供官方原版启动选项。
 - 目标解析优先用游戏目录的 `rootPlaceId`（扫描/刷新时从 Cloud v2 Universe 的 `rootPlace` 记录），缺失时走公开 `develop.roblox.com` / `apis.roblox.com/universes/v1/places/{id}/universe`。
-- 已打开同 Place 的 Internal 编辑会话只切前台；即使窗口标题不带 `[Internal]`，也按进程命令行中的 `RobloxStudioBeta_INTERNAL.exe` 识别。默认启动当前版本目录下的 Internal 副本；`--stock` 才用官方 `RobloxStudioBeta.exe`。标题从占位的 `Place1 - Roblox Studio` 变为实际项目标题后视为加载完成。补丁同时修改权限 helper 和使用相同标志位的零售版保护 guard；任一定位失败均硬失败，不回落到官方 exe。参数未公开文档化。
+- 已打开同 Place 的 Internal 编辑会话只切前台；即使窗口标题不带 `[Internal]`，也按进程命令行中的 `RobloxStudioBeta_INTERNAL.exe` 识别。同 Place 若已由官方 Studio 打开则拒绝启动，要求先关闭。标题从占位的 `Place1 - Roblox Studio` 变为实际项目标题后视为加载完成。补丁同时修改权限 helper 和使用相同标志位的零售版保护 guard；任一定位失败均硬失败，不回落到官方 exe。参数未公开文档化。
 - `studio close [games...] [--place] [--pid] [--all] [--force] [--timeout]`：默认软关闭（CloseMainWindow，Studio 自行弹保存提示，超时未关返回 `pending`），`--force` 结束编辑器及 `-editpid` 指向它的 Team Test 进程；`--all` 不可与 `--force` 同用。
 - 离线验证：`tests/studio.test.ts`、`tests/studio-internal.test.ts`。维护手册：[Internal 补丁维护](docs/studio-internal.md)。
 
