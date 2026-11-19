@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import { id } from '../../core/errors.js';
+import { listPlaceVersions, setPlaceVersionNotes } from '../../universes/place-versions.js';
 import { listPlaces, maxPlayers, updatePlaces, validatePlaceUpdate } from '../../universes/places.js';
 import { readPlaceSocialSlots, validateSocialSlots, writePlaceSocialSlots, type SocialSlotsSettings } from '../../universes/social-slots.js';
 import type { CommandContext } from '../context.js';
@@ -31,6 +32,25 @@ export function registerPlaces(program: Command, context: CommandContext): void 
       }));
       emit(result, Boolean(program.opts().json), `Universe: ${universeId}\n${result.results.map(row =>
         `${row.placeId}\t${row.before ?? '?'} -> ${row.after ?? '?'} (requested ${row.requested})\t${row.state}`).join('\n')}`, warnings);
+    });
+  places.command('versions').description('Read Place version history')
+    .command('list')
+    .requiredOption('--place <id>', 'Place ID', id)
+    .option('--cursor <cursor>', 'Read the next page')
+    .action(async options => {
+      const { http } = await context.connection();
+      context.output(await listPlaceVersions(http, options.place, options.cursor));
+    });
+  places.command('version-notes').description('Manage notes for a specific Place version')
+    .command('set')
+    .requiredOption('--place <id>', 'Place ID', id)
+    .requiredOption('--version <number>', 'Exact Place version number', id)
+    .requiredOption('--title <title>', 'Version title')
+    .option('--details <details>', 'Version description', '')
+    .action(async options => {
+      const { http } = await context.connection();
+      const version = await setPlaceVersionNotes(http, options.place, options.version, options.title, options.details);
+      context.output({ placeId: options.place, version });
     });
   const slots = places.command('social-slots').description('Read or configure Social Slots for one Place using a Roblox session cookie');
   slots.command('read')

@@ -166,22 +166,12 @@
 - `studio close [games...] [--place] [--pid] [--all] [--force] [--timeout]`：默认软关闭（CloseMainWindow，Studio 自行弹保存提示，超时未关返回 `pending`），`--force` 结束编辑器及 `-editpid` 指向它的 Team Test 进程；`--all` 不可与 `--force` 同用。
 - 离线验证：`tests/studio.test.ts`、`tests/studio-internal.test.ts`。维护手册：[Internal 补丁维护](docs/studio-internal.md)。
 
-## Studio Publish As
+## Studio 保存与发布
 
-- 目标解析、查重、发布编排与版本复核：`src/studio/publish-as.ts`；界面自动化脚本：`src/studio/publish-as.ps1`，共享助手 `src/studio/studio-ui.ps1`，运行器 `src/studio/ui-script.ts`（脚本均仅 ASCII，参数为 base64 JSON，stdout 输出一行 `@@RESULT {json}`，进度写 stderr），构建时复制全部 `.ps1` 到 `dist/studio/`。
-- 命令 `studio publish-as --to <game> (--place <place> | --new) [--pid] [--dry-run] [--debug-dir]`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅 Windows、英文 Studio 界面。
-- 覆盖目标未从初始列表识别到时，输入 Place 名筛选，通过单选框检测并选择第一条已有 Place。跳过固定的新建行，未检测到可选结果就停止。
-- 脚本注意：PowerShell 变量名不区分大小写，新增变量不得与已有变量（含 `$script:` 作用域）同名。
-- 复核：覆盖用 Assets API 版本号（`asset:read`），新建用 Place 目录新增 ID；点击按钮前失败必未发布。
-- 离线验证：`tests/studio-publish-as.test.ts`；真实界面只用 `--dry-run` 验证，真实发布需用户明确要求。
-
-## Studio 带版本备注保存
-
-- 编排、校验与本地账本：`src/studio/save-notes.ts`；界面脚本：`src/studio/save-notes.ps1`（共享 `studio-ui.ps1`）。
-- 命令 `studio save --title <t> [--details <d>] [--pid] [--dry-run] [--debug-dir]`（`src/cli/main.ts`）；SDK 导出：`src/index.ts`。仅保存到当前 Place、不发布；仅 Windows、英文 Studio 界面。
-- 打开顺序：UIA Invoke 菜单项 → 键盘+OCR 菜单 → 前台 `Ctrl+Alt+S`；菜单项置灰（Play Test 中）直接失败。字段按 OCR 标签版面定位，Save 按亮蓝像素识别。
-- 不做线上回读、不需要 API Key：Save 后对话框关闭即成功；Team Create 下备注挂到当前最新版本。账本：应用数据目录 `place-versions/<PlaceId>.jsonl`。
-- 离线验证：`tests/studio-save-notes.test.ts`；真实界面只用 `--dry-run` 验证，真实保存需用户明确要求。
+- `studio save` 和 `studio publish` 只输出 Agent 提示，`--json` 使用 `data.agentInstruction`。命令入口为 `src/cli/main.ts`，提示词位于 `src/studio/prompts.ts`。
+- 保存由官方 MCP 发起，最多等 30 秒确认回执给出的新版本。通过 `places versions list` 读取版本，并用 `places version-notes set` 设置指定版本的标题和详情并回读。SDK 在 `src/universes/place-versions.ts`，权限分别见 `places-versions` 和 `places-version-notes`。
+- 覆盖发布由官方 MCP 发起，按本次 Studio 输出判断结果。每个目标最多等 5 分钟，指数退避单次最多 30 秒。真实保存或发布需用户明确要求。
+- 离线验证：`tests/place-versions.test.ts`。
 
 ## 游戏活动
 

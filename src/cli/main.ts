@@ -37,8 +37,7 @@ import { parseTargetTime, requireDuration } from '../icons/frames.js';
 import type { Catalog, Warning } from '../universes/models.js';
 import { closeStudio, findStudioExecutable, listStudioSessions, openStudio, resolveStudioTarget, windowsStudioSystem } from '../studio/launch.js';
 import { enableElevatedCapabilities, ensureInternalStudio, inspectInternalPatch, recordPatchReceipt, sha256 } from '../studio/internal.js';
-import { pickSession, placeEntries, planPublishTarget, publishAs, resolvePublishGame, windowsPublishAsSystem } from '../studio/publish-as.js';
-import { normalizeVersionNotes, saveWithNotes, windowsSaveNotesSystem } from '../studio/save-notes.js';
+import { STUDIO_PUBLISH_PROMPT, STUDIO_SAVE_PROMPT } from '../studio/prompts.js';
 
 let diagnostics: ReturnType<typeof countdownLog> | undefined;
 const abort = new AbortController();
@@ -607,56 +606,10 @@ studio.command('list').description('List open Studio edit sessions with their Pl
   emit({ sessions }, json(), sessions.length ? sessions.map(s => `${s.pid}\t${s.placeId}\t${s.universeId ?? '—'}\t${clean(s.title ?? '')}`).join('\n') : '没有打开的 Studio 编辑会话');
 });
 
-studio.command('publish-as').description('Publish an open Studio session over a place (or as a new place) of any catalog game via File > Publish As; background UI Automation + OCR, English Studio UI')
-  .requiredOption('--to <game>', 'Destination Universe ID or exact game name from the local catalog')
-  .option('--place <place>', 'Destination Place ID or exact place name to overwrite')
-  .option('--new', 'Add as a new place in the destination game instead of overwriting')
-  .option('--pid <pid>', 'Source Studio editor process (required when several are open)', id)
-  .option('--dry-run', 'Select everything, check the Overwrite/Create button, then close the dialog without publishing')
-  .option('--debug-dir <directory>', 'Save every screenshot the UI step takes')
-  .action(async (options: { to: string; place?: string; new?: boolean; pid?: string; dryRun?: boolean; debugDir?: string }) => {
-    const local = store(), config = await local.config();
-    if (!config.currentUserId) throw new AppError('ARGUMENT_ERROR', 'No local catalog. Run rbx universe scan first.');
-    const catalog = await local.catalog(config.currentUserId);
-    if (!catalog) throw new AppError('ARGUMENT_ERROR', 'No local catalog. Run rbx universe scan first.');
-    const session = pickSession(await listStudioSessions(windowsStudioSystem()), options.pid);
-    const http = new HttpClient({ signal: abort.signal });
-    const game = resolvePublishGame(catalog.games, options.to);
-    const { target, warnings } = planPublishTarget(game, catalog.games, await placeEntries(http, game.universeId), config.currentUserId, { value: options.place, newPlace: options.new });
-    let versions: HttpClient | undefined;
-    try { versions = new HttpClient({ apiKey: await new CredentialStore(local.home).get(), signal: abort.signal }); }
-    catch { if (!options.dryRun) warnings.push({ code: 'PUBLISH_VERIFY_UNAVAILABLE', message: 'No API key; the new place version cannot be confirmed.' }); }
-    const progress = (m: string) => { process.stderr.write(clean(m) + '\n'); };
-    const { result, warnings: more } = await publishAs(windowsPublishAsSystem(), http, session, target, {
-      dryRun: options.dryRun, ...(options.debugDir ? { debugDir: resolve(options.debugDir) } : {}), ...(versions ? { versions } : {}), signal: abort.signal, progress,
-    });
-    const where = `${clean(target.ownerLabel)} / ${clean(target.experience)} / ${target.place ? `${clean(target.place.name)} (${target.place.placeId})` : '新 place'}`;
-    const v = result.verification;
-    const human = result.dryRun ? `DryRun 通过：${where}\n已选中并确认 ${clean(result.ui.button ?? '')} 按钮可用，未发布。`
-      : `已发布：${where}\n${v.state === 'verified' ? (v.newPlaceId ? `新 place ${v.newPlaceId}` : `版本 ${v.before ?? '—'} → ${v.after}`) : `未经 API 确认：${clean(v.message ?? '')}`}  ${(result.ui.elapsedMs / 1000).toFixed(1)}s`;
-    emit(result, json(), human, [...warnings, ...more]);
-  });
-
-studio.command('save').description('Save an open Studio session to Roblox with version notes via File > Save to Roblox with Notes; background UI Automation + OCR, English Studio UI')
-  .requiredOption('--title <title>', 'Version title (one line)')
-  .option('--details <details>', 'Version details; line breaks (or \\n) start new lines')
-  .option('--pid <pid>', 'Studio editor process (required when several are open)', id)
-  .option('--dry-run', 'Fill in the notes and check the Save button, then cancel the dialog without saving')
-  .option('--debug-dir <directory>', 'Save every screenshot the UI step takes')
-  .action(async (options: { title: string; details?: string; pid?: string; dryRun?: boolean; debugDir?: string }) => {
-    const notes = normalizeVersionNotes(options.title, options.details);
-    const local = store();
-    const session = pickSession(await listStudioSessions(windowsStudioSystem()), options.pid);
-    const progress = (m: string) => { process.stderr.write(clean(m) + '\n'); };
-    const { result, warnings } = await saveWithNotes(windowsSaveNotesSystem(), session, notes, {
-      dryRun: options.dryRun, ...(options.debugDir ? { debugDir: resolve(options.debugDir) } : {}),
-      ledgerDirectory: join(local.home, 'place-versions'), signal: abort.signal, progress,
-    });
-    const where = `${clean(session.title ?? '')} (place ${session.placeId})`;
-    const human = result.dryRun ? `DryRun 通过：${where}\n标题和详情已填入，Save 按钮可用，已取消未保存。`
-      : `已保存：${where}\n标题：${clean(notes.title)}  ${(result.ui.elapsedMs / 1000).toFixed(1)}s`;
-    emit(result, json(), human, warnings);
-  });
+studio.command('save').description('Print the Studio save workflow for an agent')
+  .action(() => emit({ agentInstruction: STUDIO_SAVE_PROMPT }, json(), STUDIO_SAVE_PROMPT));
+studio.command('publish').description('Print the Studio publish workflow for an agent')
+  .action(() => emit({ agentInstruction: STUDIO_PUBLISH_PROMPT }, json(), STUDIO_PUBLISH_PROMPT));
 
 try { await program.parseAsync(process.argv); }
 catch (error) {

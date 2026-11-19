@@ -701,44 +701,20 @@ rbx studio close --all                # 软关闭全部编辑会话（不可与 
 - 同一 Place 已有官方会话时，`studio open` 会报错并要求先关闭；已有 Internal 会话则只切前台。Internal 身份优先按进程命令行中的 `RobloxStudioBeta_INTERNAL.exe` 判断，不依赖窗口一定出现 `[Internal]` 后缀。
 - 默认等待窗口标题从 `Place1 - Roblox Studio` 占位标题变为实际项目标题（或出现 `[Internal]`）后视为加载完成（`ready: true`），默认超时 120 秒，超时返回 `TIMEOUT`。加载完成不代表 MCP 插件已连接，连接状态以 MCP 为准。补丁失败返回 `STUDIO_PATCH_FAILED`，不会回落到官方 exe。
 - 模块：`src/studio/launch.ts`、`src/studio/internal.ts`；SDK：`resolveStudioTarget`、`openStudio`、`ensureInternalStudio`、`inspectInternalPatch`、`listStudioSessions`、`windowsStudioSystem`。离线测试：`tests/studio.test.ts`、`tests/studio-internal.test.ts`。Studio 更新后的定位链、失败扩匹配与提权验证见 [Internal 补丁维护](studio-internal.md)。
-## Studio Publish As（Windows）
-
-把本机已打开的 Studio 编辑会话，通过 File > Publish As 发布到目录中任意游戏的指定 Place，或作为新 Place 加入。面向 agent 调用，不做交互确认；先用 `--dry-run` 检查。
-
-```sh
-rbx studio publish-as --to "<UniverseId>" --place "Example Lobby" --dry-run --json
-rbx studio publish-as --to "Example Development" --place "<PlaceId>" --json
-rbx studio publish-as --to "Example Sandbox" --new --pid "<EditorPid>" --json
-```
-
-- 界面匹配自动去掉名称中的括号副标题，例如 `Ball VS Ball [RANKED]` 使用 `Ball VS Ball` 搜索及匹配；目标与版本复核仍使用原 Universe/Place ID。同一 Owner 下主关键词对应多个宇宙时拒绝；Place 主关键词不唯一时保留完整名。
-- 初始列表找不到要覆盖的 Place 时，CLI 输入名称筛选，检查固定新建行下方是否有已存在 Place 的单选框。有就选第一条，无可选结果则停止。选中后检查单选框和覆盖按钮是否已启用。
-
-- `--to`：Universe ID 或本地目录中的精确游戏名；`--place`：Place ID 或精确 Place 名；`--new`：新建 Place。两者必选其一。
-- `--pid`：源 Studio 编辑进程，多个会话时必填（见 `studio list`）。`--debug-dir` 保存每一步截图。
-- 目标先由本地目录（群组名、游戏名）和公开 Place 目录换算成对话框显示的文字；个人游戏对应 `My Experiences`。同一 Owner 下同名游戏、同一游戏内同名 Place 在操作界面前直接拒绝（退出码 2），因为对话框无法区分。
-- 界面操作由内置脚本 `src/studio/publish-as.ps1` 完成：UI Automation 定位窗口并展开 File 菜单，Qt 不暴露的部分用 PrintWindow 截图 + Windows 中英文 OCR + PostMessage 后台点击/按键，坐标按对话框实际 DPI 缩放；每一步校验，识别不到就停。
-- 发布后复核：覆盖时比较 Assets API 中 Place 的最新版本号（需 API Key 的 `asset:read`）；新建时在 Place 目录中查找新增 ID。界面成功但 API 未确认时状态为 `partial`（退出码 3）。点击 Overwrite/Create 之前的失败一定未发布；点击之后界面读取失败且未见新版本时报错 `STUDIO_UI_ERROR` 并说明状态未知，先检查再重试。
-- 限制：Studio 必须是英文界面且不能最小化；不移动真实鼠标，但展开菜单会把 Studio 短暂拉到前台、对话框会在屏幕上显示约 10 秒，期间操作电脑可能导致失败。个人私密游戏不在目录中，同名冲突只能在界面上发现。
-- 离线验证：`tests/studio-publish-as.test.ts`。
-
-## Studio 带版本备注保存（Windows）
-
-把本机已打开的 Studio 编辑会话通过 File > Save to Roblox with Notes 保存到**当前 Place**，并填写版本标题与详情。只保存版本，不发布上线。Publish As 对话框没有备注栏，需要备注时先用本命令保存。
+## Studio 保存与发布
 
 ```powershell
-rbx studio save --title "v1.2.3 修复结算" --details "修复结算界面`n调整掉落" --dry-run --json
-rbx studio save --title "v1.2.3 修复结算" --details "第一行\n第二行" --pid "<EditorPid>" --json
+rbx studio save
+rbx studio publish
+rbx --json places versions list --place "<PlaceId>"
+rbx --json places version-notes set --place "<PlaceId>" --version "<版本号>" --title "Update 1" --details "Market board display update."
 ```
 
-- `--title` 必填，单行；`--details` 可选，真实换行或字面量 `\n` 都按换行输入。拒绝 Tab 及其他控制字符（后台按键会移动焦点或关闭对话框）。
-- `--pid`：多个会话时必填。`--dry-run` 填好标题和详情、确认 Save 可用后点 Cancel，不保存。`--debug-dir` 保存每一步截图。
-- 界面脚本：`src/studio/save-notes.ps1`，共享 `src/studio/studio-ui.ps1`。打开对话框依次尝试 UIA 调用菜单项、键盘 + OCR 导航菜单、前台按 `Ctrl+Alt+S`（会短暂抢焦点，结束后交还）。菜单项置灰（如 Play Test 中）直接报错，不再尝试。
-- 对话框是引擎渲染的插件窗口，UIA 看不到输入框：按 OCR 识别的标签版面定位字段，后台点击并逐字输入；输入前要求两个字段为空（显示占位文字），输入后回读，Save 按钮按亮蓝色像素识别（禁用时为暗蓝）。已打开的同名对话框会先关闭，其中未保存的文字丢弃。
-- 不做线上回读、不需要 API Key：点击 Save 后对话框关闭即视为成功。点击 Save 前的失败一定未保存；点击后对话框未关闭报 `STUDIO_UI_ERROR`，状态未知，先查版本历史再重试。输出中的 `titleOcr` / `detailsOcr` 只是诊断信息。
-- Team Create 下备注会挂到当前最新的已有版本上，不一定立即产生新版本号。
-- 本地账本：每次成功保存追加到应用数据目录 `place-versions/<PlaceId>.jsonl`，记录时间、Place、标题与详情；dry-run 不写。
-- 离线验证：`tests/studio-save-notes.test.ts`。真实界面只用 `--dry-run` 验证，真实保存需用户明确要求。
+- 两个 Studio 命令只输出 Agent 执行提示，`--json` 时正文位于 `data.agentInstruction`。源 Place、目标和备注由 Agent 从任务中取得。
+- 保存通过官方 Studio MCP 的 `save_place` 发起。最多等 30 秒确认回执中的确切新版本可在云端查到，随后设置备注并回读。返回已有版本或无法确认新版本时停止。
+- 发布通过官方 Studio MCP 覆盖已有 Place，以同一 Studio 会话在本次调用后的输出确认结果。每个 Place 最多等 5 分钟，指数退避单次最多 30 秒。失败或结果未知时停止。
+- `places versions list` 返回一页版本和 `nextCursor`，可用 `--cursor` 继续读取，权限为 `universe.place:read`。
+- `places version-notes set` 只更新指定版本的备注，省略 `--details` 时提交空详情。写入和回读分别需要 `universe.place:write` 和 `universe.place:read`。回读不匹配时返回失败，不自动重复写入。
 
 ## Place 服务器人数上限
 

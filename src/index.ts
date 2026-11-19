@@ -23,6 +23,8 @@ export { getUniverseServerStatus, restartUniverseServers } from './universes/res
 export { getPlace, listPlaces, updatePlaces } from './universes/places.js';
 export type { PlaceInfo, PlaceUpdateOptions, PlaceUpdateResult } from './universes/places.js';
 export { readPlaceSocialSlots, writePlaceSocialSlots } from './universes/social-slots.js';
+export { listPlaceVersions, setPlaceVersionNotes } from './universes/place-versions.js';
+export type { PlaceVersion, PlaceVersionPage } from './universes/place-versions.js';
 export type { PlaceSocialSlots, SocialSlotsMode, SocialSlotsSettings, SocialSlotsWriteResult } from './universes/social-slots.js';
 export type { ServerCounts, ServerRestartOptions, UniverseServerStatus } from './universes/restart.js';
 export type { CatalogOptions } from './universes/catalog.js';
@@ -66,10 +68,6 @@ export { closeStudio, findStudioExecutable, isInternalTitle, isReadyTitle, listS
 export type { CloseOptions, CloseResult, OpenOptions, OpenResult, StudioProcess, StudioSystem, StudioTarget } from './studio/launch.js';
 export { applyInternalPatch, enableElevatedCapabilities, ensureInternalStudio, inspectInternalPatch, INTERNAL_EXE, internalPathFor, planInternalPatch, STOCK_EXE } from './studio/internal.js';
 export type { EnsureInternalResult, InternalPatchInspection, InternalPatchPlan } from './studio/internal.js';
-export { latestPlaceVersion, normalizeLabel, pickSession, placeEntries, planPublishTarget, publishAs, publishScriptPath, resolvePublishGame, searchTerm, windowsPublishAsSystem, PERSONAL_OWNER_LABEL } from './studio/publish-as.js';
-export { normalizeVersionNotes, saveNotesScriptPath, saveWithNotes, windowsSaveNotesSystem } from './studio/save-notes.js';
-export type { SaveNotesOptions, SaveNotesResult, SaveNotesSystem, SaveNotesUiArgs, SaveNotesUiResult, VersionNotes } from './studio/save-notes.js';
-export type { PlaceEntry, PlaceVersion, PublishAsOptions, PublishAsResult, PublishAsSystem, PublishTarget, PublishUiArgs, PublishUiResult, PublishVerification } from './studio/publish-as.js';
 export { DEVPRODUCT_TABLE_NAME, classifyDeveloperProductIcon, compareIds, createDeveloperProduct, getDeveloperProduct, listDeveloperProducts, loadDeveloperProductTable, parseDeveloperProductSource, parseDeveloperProductTable, updateDeveloperProduct } from './devproducts/products.js';
 export type { DeveloperProduct, DeveloperProductIconStatus, DeveloperProductRow, ProductFields } from './devproducts/products.js';
 export { uploadDeveloperProductIcon } from './devproducts/icon.js';

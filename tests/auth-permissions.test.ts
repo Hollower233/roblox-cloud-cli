@@ -51,7 +51,7 @@ test('DataStore targets require a matching universe and datastore, without cross
   assert.equal(checkKeyPermissions(identity([{ name: scope.name, operations: ['read'] }]), { feature: 'datastore-get', universeId: '123' }).configurationState, 'unknown');
 });
 test('creator access stays unknown, inactive key stays inactive, and argument validation is strict', () => {
-  const result = checkKeyPermissions(identity([{ name: 'asset', operations: ['read'], userIds: ['100'] }], { enabled: false }), { feature: 'studio-publish-verify', universeId: '123' });
+  const result = checkKeyPermissions(identity([{ name: 'asset', operations: ['read'], userIds: ['100'] }], { enabled: false }), { feature: 'events-image-read', universeId: '123' });
   assert.equal(result.configurationState, 'unknown'); assert.equal(result.keyState, 'disabled'); assert.equal(result.businessAccessVerified, false);
   assert.equal(checkKeyPermissions(identity([], { expired: true }), { feature: 'local' }).keyState, 'expired');
   for (const options of [{ universeId: '../123' }, { datastore: 'Default' }, { universeId: '123', datastore: ' ' }]) {
