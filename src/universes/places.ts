@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { object } from '../cloud/common.js';
 import { AppError, errorInfo, id } from '../core/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
@@ -9,6 +10,17 @@ export interface PlaceUpdateOptions { placeId?: string; all?: boolean; maxPlayer
 export interface PlaceUpdateResult {
   placeId: string; before?: number; requested: number; after?: number;
   state: 'verified' | 'failed' | 'unverified'; error?: ReturnType<typeof errorInfo>;
+}
+export const defaultPlaceTemplateId = '95206881';
+export interface PlaceCreateOptions { name: string; templatePlaceId?: string; maxPlayers?: number }
+export interface PlaceCreateResult {
+  universeId: string; templatePlaceId: string; name: string; placeId?: string; place?: PlaceInfo;
+  state: 'verified' | 'configuration_unverified' | 'creation_unverified';
+  newPlaceCandidates?: string[]; error?: ReturnType<typeof errorInfo>;
+}
+export interface PlaceRemoveResult {
+  universeId: string; placeId: string; state: 'verified' | 'already_absent' | 'unverified';
+  error?: ReturnType<typeof errorInfo>;
 }
 export function maxPlayers(value: number): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new AppError('ARGUMENT_ERROR', 'Max players must be a positive safe integer.');
@@ -70,6 +82,91 @@ export async function listPlaces(http: HttpClient, universeId: string): Promise<
   const places: PlaceInfo[] = [];
   for (const placeId of ids) places.push(parsePlace(await http.request(url(universeId, placeId), { auth: true }), universeId, placeId, root));
   return places;
+}
+
+function definitelyRejected(error: unknown): boolean {
+  return error instanceof AppError && (
+    ['ARGUMENT_ERROR', 'AUTH_REQUIRED'].includes(error.code)
+    || (error.httpStatus !== undefined && error.httpStatus >= 400 && error.httpStatus < 500 && error.httpStatus !== 408)
+  );
+}
+
+export async function createPlace(http: HttpClient, universeId: string, options: PlaceCreateOptions): Promise<PlaceCreateResult> {
+  id(universeId);
+  const name = options.name.trim();
+  if (!name) throw new AppError('ARGUMENT_ERROR', 'Place name must not be blank.');
+  const templatePlaceId = id(options.templatePlaceId ?? defaultPlaceTemplateId);
+  const serverSize = options.maxPlayers === undefined ? undefined : maxPlayers(options.maxPlayers);
+  const before = await listPlaces(http, universeId);
+  if (before.some(place => place.name.toLowerCase() === name.toLowerCase())) {
+    throw new AppError('ARGUMENT_ERROR', 'A Place with that name already exists in the target universe.');
+  }
+
+  const result = { universeId, templatePlaceId, name };
+  let placeId: string;
+  try {
+    const created = object(await http.request(`https://apis.roblox.com/universes/v1/user/universes/${universeId}/places`, {
+      cookieAuth: true, method: 'POST', body: { templatePlaceId: Number(templatePlaceId) },
+    }), true);
+    placeId = responseId(created.placeId);
+    if (before.some(place => place.placeId === placeId)) {
+      throw new AppError('INVALID_RESPONSE', 'Roblox returned a Place ID that was already in the target universe.');
+    }
+  } catch (error) {
+    if (definitelyRejected(error)) throw error;
+    const beforeIds = new Set(before.map(place => place.placeId));
+    const after = await placeDirectory(http, universeId).catch(() => undefined);
+    return {
+      ...result, state: 'creation_unverified', error: errorInfo(error),
+      newPlaceCandidates: after?.filter(candidate => !beforeIds.has(candidate)),
+    };
+  }
+
+  try {
+    const configuration = serverSize === undefined ? { displayName: name } : { displayName: name, serverSize };
+    const query = new URLSearchParams({ updateMask: Object.keys(configuration).join(',') });
+    await http.request(`${url(universeId, placeId)}?${query}`, { method: 'PATCH', auth: true, body: configuration });
+    const place = await getPlace(http, universeId, placeId);
+    if (place.name !== name || (serverSize !== undefined && place.maxPlayers !== serverSize)) {
+      throw new AppError('INVALID_RESPONSE', 'Place readback does not match its requested configuration.');
+    }
+    return { ...result, placeId, place, state: 'verified' };
+  } catch (error) {
+    return { ...result, placeId, state: 'configuration_unverified', error: errorInfo(error) };
+  }
+}
+
+export async function removePlace(http: HttpClient, universeId: string, placeId: string): Promise<PlaceRemoveResult> {
+  id(universeId);
+  id(placeId);
+  const result = { universeId, placeId };
+  const before = await listPlaces(http, universeId);
+  const place = before.find(row => row.placeId === placeId);
+  if (!place) return { ...result, state: 'already_absent' };
+  if (place.isRootPlace) throw new AppError('ARGUMENT_ERROR', 'The root Place cannot be removed.');
+
+  let requestError: unknown;
+  try {
+    await http.request(`https://apis.roblox.com/universes/v1/universes/${universeId}/places/${placeId}/remove-place`, {
+      cookieAuth: true, method: 'POST',
+    });
+  } catch (error) {
+    if (definitelyRejected(error)) throw error;
+    requestError = error;
+  }
+
+  try {
+    for (const wait of [0, 1000, 2000]) {
+      if (wait) await delay(wait);
+      const ids = await placeDirectory(http, universeId);
+      if (!ids.includes(placeId) && before.some(row => row.isRootPlace && ids.includes(row.placeId))) {
+        return { ...result, state: 'verified' };
+      }
+    }
+    throw new AppError('INVALID_RESPONSE', 'The directory has not confirmed removal. Check it before retrying.');
+  } catch (error) {
+    return { ...result, state: 'unverified', error: errorInfo(requestError ?? error) };
+  }
 }
 
 export async function updatePlaces(http: HttpClient, universeId: string, options: PlaceUpdateOptions): Promise<{ universeId: string; results: PlaceUpdateResult[] }> {

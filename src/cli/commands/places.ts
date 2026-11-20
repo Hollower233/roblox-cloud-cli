@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { id } from '../../core/errors.js';
 import { listPlaceVersions, setPlaceVersionNotes } from '../../universes/place-versions.js';
-import { listPlaces, maxPlayers, updatePlaces, validatePlaceUpdate } from '../../universes/places.js';
+import { createPlace, listPlaces, maxPlayers, removePlace, updatePlaces, validatePlaceUpdate } from '../../universes/places.js';
 import { readPlaceSocialSlots, validateSocialSlots, writePlaceSocialSlots, type SocialSlotsSettings } from '../../universes/social-slots.js';
 import type { CommandContext } from '../context.js';
 import { clean, emit } from '../output.js';
@@ -11,7 +11,7 @@ function renderSocialSlots(settings: SocialSlotsSettings): string {
 }
 
 export function registerPlaces(program: Command, context: CommandContext): void {
-  const places = program.command('places').description('List Places and configure player limits and Social Slots');
+  const places = program.command('places').description('List, create, remove, and configure Places');
   places.command('list').requiredOption('--universe <id-or-name>', 'Universe ID or exact local game name')
     .action(async options => {
       const { universeId, http } = await context.universe(options.universe);
@@ -32,6 +32,35 @@ export function registerPlaces(program: Command, context: CommandContext): void 
       }));
       emit(result, Boolean(program.opts().json), `Universe: ${universeId}\n${result.results.map(row =>
         `${row.placeId}\t${row.before ?? '?'} -> ${row.after ?? '?'} (requested ${row.requested})\t${row.state}`).join('\n')}`, warnings);
+    });
+  places.command('create').description('Create and configure one child Place')
+    .requiredOption('--universe <id-or-name>', 'Universe ID or exact local game name')
+    .requiredOption('--name <name>', 'Name for the new Place')
+    .option('--template-place <id>', 'Template Place ID (default: Baseplate)', id)
+    .option('--max-players <count>', 'Positive integer player limit', value => /^\d+$/.test(value) ? maxPlayers(Number(value)) : maxPlayers(NaN))
+    .action(async options => {
+      const { universeId, http } = await context.universe(options.universe, 'both');
+      const result = await createPlace(http, universeId, {
+        name: options.name, templatePlaceId: options.templatePlace, maxPlayers: options.maxPlayers,
+      });
+      const warnings = result.error ? [{
+        ...result.error, resource: result.placeId ?? universeId,
+        message: `${result.error.message} Check the Place list before resubmitting creation.`,
+      }] : [];
+      const candidates = result.newPlaceCandidates?.length ? `\nCandidate Place IDs: ${result.newPlaceCandidates.join(', ')}` : '';
+      const size = result.place ? `\nMax players: ${result.place.maxPlayers}` : '';
+      emit(result, Boolean(program.opts().json),
+        `Universe: ${universeId}\nPlace: ${result.placeId ?? '?'} (${clean(result.name)})\nState: ${result.state}${size}${candidates}`, warnings);
+    });
+  places.command('remove').description('Remove one child Place from a universe')
+    .requiredOption('--universe <id-or-name>', 'Universe ID or exact local game name')
+    .requiredOption('--place <id>', 'Exact child Place ID to remove', id)
+    .action(async options => {
+      const { universeId, http } = await context.universe(options.universe, 'both');
+      const result = await removePlace(http, universeId, options.place);
+      const warnings = result.error ? [{ ...result.error, resource: result.placeId }] : [];
+      emit(result, Boolean(program.opts().json),
+        `Universe: ${universeId}\nPlace: ${result.placeId}\nState: ${result.state}`, warnings);
     });
   places.command('versions').description('Read Place version history')
     .command('list')

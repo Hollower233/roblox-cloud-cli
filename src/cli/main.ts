@@ -154,7 +154,7 @@ localization.command('write <universe>').description('Write selected game-info f
 
 const auth = program.command('auth').description('Configure and validate API credentials');
 registerAuthPermissions(auth, { store, json, signal: abort.signal });
-const cookieAuth = auth.command('cookie').description('Manage the Roblox session cookie used by Social Slots');
+const cookieAuth = auth.command('cookie').description('Manage the Roblox session cookie used by Place operations');
 cookieAuth.command('set').description('Enter and encrypt a Roblox session cookie (Windows DPAPI)').action(async () => {
   if (!process.stdin.isTTY || !process.stderr.isTTY) throw new AppError('ARGUMENT_ERROR', 'Run rbx auth cookie set in an interactive terminal.');
   const cookie = await password({ message: 'Roblox .ROBLOSECURITY', mask: '*' }, { output: process.stderr, signal: abort.signal });

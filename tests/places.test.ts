@@ -2,12 +2,99 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import test from 'node:test';
-import { AppError, HttpClient, getPlace, listPlaces, updatePlaces } from '../src/index.js';
+import { AppError, HttpClient, createPlace, getPlace, listPlaces, removePlace, updatePlaces } from '../src/index.js';
 
 const place = (id: string, size = 20) => ({ path: `universes/123/places/${id}`, displayName: `Place ${id}`, serverSize: size });
 function mock(handler: (url: URL, init: RequestInit) => Response | Promise<Response>) {
-  return new HttpClient({ apiKey: 'fictional-key', intervalMs: 0, retries: 0, fetch: async (url, init) => handler(new URL(String(url)), init!) });
+  return new HttpClient({ apiKey: 'fictional-key', robloxCookie: 'fictional-cookie',
+    intervalMs: 0, retries: 0, fetch: async (url, init) => handler(new URL(String(url)), init!) });
 }
+
+test('child Place creation uses Baseplate, answers one CSRF challenge, and verifies configuration', async () => {
+  let posts = 0;
+  const configured = { ...place('22', 30), displayName: 'Smoke Test' };
+  const http = mock((url, init) => {
+    const headers = new Headers(init.headers);
+    if (url.host === 'develop.roblox.com') return Response.json({ data: [{ id: 11 }] });
+    if (url.pathname === '/universes/v1/user/universes/123/places') {
+      assert.equal(init.method, 'POST');
+      assert.equal(headers.get('cookie'), '.ROBLOSECURITY=fictional-cookie');
+      assert.equal(headers.get('x-api-key'), null);
+      assert.deepEqual(JSON.parse(String(init.body)), { templatePlaceId: 95206881 });
+      if (++posts === 1) {
+        return Response.json({ errors: [{ code: 0, message: 'Token Validation Failed' }] },
+          { status: 403, headers: { 'x-csrf-token': 'fake-token' } });
+      }
+      assert.equal(headers.get('x-csrf-token'), 'fake-token');
+      return Response.json({ placeId: 22 });
+    }
+    assert.equal(headers.get('cookie'), null);
+    assert.equal(headers.get('x-api-key'), 'fictional-key');
+    if (url.pathname.endsWith('/universes/123')) return Response.json({ rootPlace: 'universes/123/places/11' });
+    if (url.pathname.endsWith('/places/11')) return Response.json(place('11'));
+    assert.equal(url.pathname, '/cloud/v2/universes/123/places/22');
+    if (init.method === 'PATCH') {
+      assert.equal(url.searchParams.get('updateMask'), 'displayName,serverSize');
+      assert.deepEqual(JSON.parse(String(init.body)), { displayName: 'Smoke Test', serverSize: 30 });
+    }
+    return Response.json(configured);
+  });
+  const result = await createPlace(http, '123', { name: 'Smoke Test', maxPlayers: 30 });
+  assert.equal(posts, 2);
+  assert.equal(result.state, 'verified');
+  assert.equal(result.placeId, '22');
+  assert.equal(result.place?.maxPlayers, 30);
+});
+
+test('ambiguous creation does not repeat the POST and only reports new IDs as candidates', async () => {
+  let posts = 0;
+  const result = await createPlace(mock((url, init) => {
+    if (url.host === 'develop.roblox.com') return Response.json({ data: posts ? [{ id: 11 }, { id: 22 }] : [{ id: 11 }] });
+    if (init.method === 'POST') {
+      posts++;
+      return new Response(null, { status: 503 });
+    }
+    assert.equal(init.method, 'GET');
+    if (url.pathname.endsWith('/universes/123')) return Response.json({ rootPlace: 'universes/123/places/11' });
+    return Response.json(place('11'));
+  }), '123', { name: 'Smoke Test' });
+  assert.equal(posts, 1);
+  assert.equal(result.state, 'creation_unverified');
+  assert.equal(result.placeId, undefined);
+  assert.deepEqual(result.newPlaceCandidates, ['22']);
+});
+
+test('configuration failure preserves the newly created ID', async () => {
+  const result = await createPlace(mock((url, init) => {
+    if (url.host === 'develop.roblox.com') return Response.json({ data: [{ id: 11 }] });
+    if (init.method === 'POST') return Response.json({ placeId: 22 });
+    if (init.method === 'PATCH') return new Response(null, { status: 403 });
+    if (url.pathname.endsWith('/universes/123')) return Response.json({ rootPlace: 'universes/123/places/11' });
+    return Response.json(place('11'));
+  }), '123', { name: 'Smoke Test' });
+  assert.equal(result.state, 'configuration_unverified');
+  assert.equal(result.placeId, '22');
+});
+
+test('removal refuses the root, verifies the exact child disappeared, and skips an absent child', async () => {
+  let posts = 0;
+  const http = mock((url, init) => {
+    if (url.host === 'develop.roblox.com') return Response.json({ data: posts ? [{ id: 11 }] : [{ id: 11 }, { id: 22 }] });
+    if (init.method === 'POST') {
+      assert.equal(url.pathname, '/universes/v1/universes/123/places/22/remove-place');
+      assert.equal(new Headers(init.headers).get('cookie'), '.ROBLOSECURITY=fictional-cookie');
+      posts++;
+      return new Response(null, { status: 200 });
+    }
+    if (url.pathname.endsWith('/universes/123')) return Response.json({ rootPlace: 'universes/123/places/11' });
+    return Response.json(place(url.pathname.split('/').at(-1)!));
+  });
+  await assert.rejects(removePlace(http, '123', '11'), { code: 'ARGUMENT_ERROR' });
+  assert.equal(posts, 0);
+  assert.equal((await removePlace(http, '123', '22')).state, 'verified');
+  assert.equal((await removePlace(http, '123', '22')).state, 'already_absent');
+  assert.equal(posts, 1);
+});
 test('list paginates and deduplicates all Places, reads sizes and identifies root, without leaking keys', async () => {
   const http = mock((url, init) => {
     const key = (init.headers as Record<string, string>)['x-api-key'];

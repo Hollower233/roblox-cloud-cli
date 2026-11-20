@@ -729,6 +729,19 @@ $env:RBX_LIVE_PLACES_UNIVERSE = '<测试 Universe ID>'
 npm run test:live:places
 ```
 
+## 创建和移除子 Place
+
+```powershell
+rbx places create --universe "<UniverseId>" --name "2v2" --max-players 30
+rbx places create --universe "<UniverseId>" --name "Fusion" --template-place 95206881
+rbx places remove --universe "<UniverseId>" --place "<PlaceId>"
+```
+
+- `create` 默认使用 Baseplate 模板 `95206881`，省略人数时保留新 Place 的默认设置。完成后返回新 Place ID 和回读配置。配置未确认时仍返回新 ID（退出码 3）。创建结果不明时查询目录并列出新出现的候选 ID，操作员需要核对后再决定是否重发。
+- `remove` 将指定子 Place 从宇宙移除。通过 Place 目录核对归属，拒绝移除 Root，完成后回读目录。已不在该宇宙时返回 `already_absent`。
+- 两个命令都需要有目标宇宙编辑权限的 Roblox 登录会话（`rbx auth cookie set`）。API Key 用于查询，权限为 `universe:read` 和 `universe.place:read`。创建时配置名称和人数还需要 `universe.place:write`。
+- SDK 导出 `createPlace(http, universeId, options)` 和 `removePlace(http, universeId, placeId)`，使用同时配置 `apiKey` 与 `robloxCookie` 的 `HttpClient`。
+
 ## Place Social Slots
 
 ```powershell

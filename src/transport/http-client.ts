@@ -35,10 +35,17 @@ export class HttpClient {
     const method = options.method ?? (hasBody ? 'POST' : 'GET');
     if (method === 'GET' && hasBody) throw new AppError('ARGUMENT_ERROR', 'GET requests cannot carry a body.');
     let cookie: string | undefined;
+    const removePlace = options.cookieAuth && target.host === 'apis.roblox.com' && method === 'POST'
+      && /^\/universes\/v1\/universes\/[1-9]\d*\/places\/[1-9]\d*\/remove-place$/.test(target.pathname) && !hasBody;
     if (options.cookieAuth) {
-      if (target.host !== 'develop.roblox.com' || !/^\/v2\/places\/[1-9]\d*$/.test(target.pathname)
-        || target.search || !['GET', 'PATCH'].includes(method) || options.auth || options.rawResponse || options.validationDetails) {
-        throw new AppError('ARGUMENT_ERROR', 'Cookie authentication is limited to the Develop Place configuration endpoint.');
+      const placeConfiguration = target.host === 'develop.roblox.com' && /^\/v2\/places\/[1-9]\d*$/.test(target.pathname)
+        && (method === 'GET' || method === 'PATCH');
+      const createPlace = target.host === 'apis.roblox.com' && method === 'POST'
+        && /^\/universes\/v1\/user\/universes\/[1-9]\d*\/places$/.test(target.pathname)
+        && options.body !== undefined && options.rawBody === undefined && options.form === undefined;
+      if ((!placeConfiguration && !createPlace && !removePlace)
+        || target.search || target.hash || options.auth || options.rawResponse || options.validationDetails) {
+        throw new AppError('ARGUMENT_ERROR', 'Cookie authentication is limited to supported Place endpoints.');
       }
       if (this.options.robloxCookie === undefined) throw new AppError('AUTH_REQUIRED', 'Run rbx auth cookie set.');
       cookie = `.ROBLOSECURITY=${validateRobloxCookie(this.options.robloxCookie)}`;
@@ -68,7 +75,7 @@ export class HttpClient {
           redirect: 'error', signal,
         });
         if (!response.ok) {
-          const challenge = cookie && method === 'PATCH' && response.status === 403 && !csrfToken
+          const challenge = cookie && method !== 'GET' && response.status === 403 && !csrfToken
             ? response.headers.get('x-csrf-token') : null;
           if (challenge && await isCsrfChallenge(response)) {
             // Roblox rejected the first request before applying it. Answer the challenge once.
@@ -105,6 +112,10 @@ export class HttpClient {
           throw new AppError(code, `Roblox ${target.pathname} returned HTTP ${response.status}.${validation}`, response.status);
         }
         if (options.rawResponse) return { status: response.status, text: await response.text(), headers: Object.fromEntries(response.headers) } as T;
+        if (removePlace) {
+          await response.body?.cancel();
+          return undefined as T;
+        }
         try { return await response.json() as T; }
         catch { throw new AppError('INVALID_RESPONSE', 'Roblox returned invalid JSON.'); }
       } catch (error) {
