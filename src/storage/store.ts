@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { AppError, id } from '../core/errors.js';
 import type { Catalog } from '../universes/models.js';
 import { validatePlayerCatalog, type PlayerCatalog } from '../players/catalog.js';
+import { validateGameCatalog, type GameCatalog } from '../games/catalog.js';
 
 export interface Config { schemaVersion: 1; currentUserId?: string; accounts: Record<string, { manualIds: string[] }> }
 export function defaultHome(): string { return process.env.RBX_HOME ?? join(process.platform === 'win32' ? process.env.LOCALAPPDATA ?? homedir() : process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'roblox-cloud-cli'); }
@@ -54,6 +55,10 @@ export class LocalStore {
     return validatePlayerCatalog(await this.read('players.json', { schemaVersion: 1, players: [] }));
   }
   savePlayers(catalog: PlayerCatalog): Promise<void> { return this.write('players.json', validatePlayerCatalog(catalog)); }
+  async savedGames(): Promise<GameCatalog> {
+    return validateGameCatalog(await this.read('games.json', { schemaVersion: 1, games: [] }));
+  }
+  saveGames(catalog: GameCatalog): Promise<void> { return this.write('games.json', validateGameCatalog(catalog)); }
   async catalog(userId: string): Promise<Catalog | null> {
     const c = await this.read(`catalog-${id(userId)}.json`);
     if (c === null) return null;

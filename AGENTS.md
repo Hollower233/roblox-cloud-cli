@@ -100,6 +100,12 @@
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
 - 离线验证：`tests/players.test.ts`。
 
+## 公开游戏搜索、收藏与启动
+
+- 公开搜索和 Place 查询：`src/games/discovery.ts`；收藏和昵称：`src/games/catalog.ts`，存于应用数据目录的 `games.json`，由 `LocalStore` 加锁并原子写入。
+- CLI：`src/cli/commands/games.ts`，命令 `game search/add/list/find/nickname/remove` 和 `play`；SDK：`src/index.ts`。支持中文和标题片段。在线候选先由用户选择；非交互和 JSON 模式返回候选、退出码 3，重用选中 Place ID。
+- 公开查询无需 Key 或 Cookie。Windows 启动：`src/games/launch.ts`，通过 `roblox://placeId=` 交给官方 Player，只回报已请求启动。收藏与托管游戏扫描独立。离线验证：`tests/games.test.ts`。
+
 ## 群组角色管理
 
 - 角色查询、成员查询与批量添加/移除模块：`src/groups/roles.ts`。

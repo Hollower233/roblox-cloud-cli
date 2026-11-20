@@ -436,6 +436,27 @@ rbx profile history "Example Test" --player 示例甲
 
 SDK 可用 `PlayerCatalogService(new LocalStore(home))` 管理清单；`resolveProfilePlayers(input, http, savedPlayers)` 接收可选的本地记录列表。SDK 添加已解析的玩家时调用 `service.add(player, alias?)`，可先用 `resolveProfilePlayers(username, http)` 获取真实 UID。
 
+## 公开游戏搜索与收藏
+
+```sh
+rbx game search "种花种菜"
+rbx game search "natural disas"
+rbx game add "natural disas" --nickname "天灾"   # 在终端选一个候选
+rbx game add 189707 --nickname "天灾"             # 也接受 Roblox 游戏详情页链接
+rbx game list
+rbx game find "天"
+rbx game nickname "天灾" "自然灾害"
+rbx play "自然灾害"
+rbx play 189707
+rbx game remove "自然灾害"
+```
+
+- `game search` 使用 Roblox 公开搜索，支持中文关键词和不完整标题，按 Roblox 返回顺序显示候选及 Place ID，有作者数据时也显示作者。`game add` 只有明确选择游戏或提供详情页链接、Place ID 后才保存。
+- 收藏在应用数据目录的 `games.json`，可用 `--home` 切换目录。`list/find/nickname/remove` 可离线运行。昵称支持中文，在收藏中唯一，按忽略大小写和全半角的方式比较。重复添加同一 Place 时更新游戏资料，省略 `--nickname` 会保留已有昵称。
+- `rbx play` 用 Place ID、Roblox 详情页链接或唯一的本地匹配直接启动。文字输入优先匹配完整昵称，再匹配完整游戏名及片段。多个本地候选或在线搜索结果需要选择；`--json` 和非交互环境返回候选并以 3 退出，再以选中的 Place ID 调用。`game add` 在非交互环境按文本搜索时也使用此流程。
+- 收藏、搜索和启动均无需 API Key 或 Cookie。`play` 仅在 Windows 启动官方 Roblox Player，`launch_requested` 表示已交给 Windows 处理。登录和能否进服由 Roblox Player 决定。`universe scan` 继续用于发现自己管理的游戏。
+- SDK 提供 `searchPublicGames`、`lookupPublicGame`、`GameCatalogService` 和 `launchRobloxPlayer`。
+
 ## 群组角色管理
 
 通用群组角色命令支持任意可见角色，不绑定 Tester 或特定群组。需要有效 API Key；查询要求 `group:read`，添加/移除（包括预览）要求 `group:read` 和 `group:write`。`legacy-group:manage` 不替代这两个 scope。

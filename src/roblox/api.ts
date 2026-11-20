@@ -10,6 +10,18 @@ function array(x: unknown): unknown[] { if (!Array.isArray(x)) throw new AppErro
 function text(x: unknown): string { if (typeof x !== 'string') throw new AppError('INVALID_RESPONSE', 'Expected a Roblox string.'); return x; }
 function bool(x: unknown): boolean { if (typeof x !== 'boolean') throw new AppError('INVALID_RESPONSE', 'Expected a Roblox boolean.'); return x; }
 function apiId(x: unknown): string { try { return id(String(x)); } catch { throw new AppError('INVALID_RESPONSE', 'Invalid Roblox ID.'); } }
+
+export async function publicGameDetails(http: HttpClient, universeIds: string[]): Promise<GameDetails[]> {
+  if (!universeIds.length) return [];
+  if (universeIds.length > 50) throw new AppError('ARGUMENT_ERROR', 'Details requests accept at most 50 IDs.');
+  const d = object(await http.request(`https://games.roblox.com/v1/games?universeIds=${universeIds.map(id).join(',')}`));
+  return array(d.data).map(x => {
+    const g = object(x), owner = object(g.creator);
+    if (!['User', 'Group'].includes(owner.type) || !Number.isSafeInteger(g.playing) || g.playing < 0) throw new AppError('INVALID_RESPONSE', 'Invalid game owner or CCU.');
+    return { id: apiId(g.id), name: text(g.name), owner: { id: apiId(owner.id), name: text(owner.name), type: owner.type }, ccu: g.playing };
+  });
+}
+
 export class RobloxApi implements RobloxGateway {
   constructor(private http: HttpClient, private apiKey: string) {}
   /** Inspect configuration, including inactive keys; never returns the secret. */
@@ -54,14 +66,5 @@ export class RobloxApi implements RobloxGateway {
     const rootPlaceId = typeof d.rootPlace === 'string' ? /^universes\/\d+\/places\/(\d+)$/.exec(d.rootPlace)?.[1] : undefined;
     return { name: text(d.displayName), visibility: d.visibility === 'PUBLIC' || d.visibility === 'PRIVATE' ? d.visibility : 'UNKNOWN', ...(rootPlaceId ? { rootPlaceId } : {}) };
   }
-  async details(universeIds: string[]): Promise<GameDetails[]> {
-    if (!universeIds.length) return [];
-    if (universeIds.length > 50) throw new AppError('ARGUMENT_ERROR', 'Details requests accept at most 50 IDs.');
-    const d = object(await this.http.request(`https://games.roblox.com/v1/games?universeIds=${universeIds.map(id).join(',')}`));
-    return array(d.data).map(x => {
-      const g = object(x), owner = object(g.creator);
-      if (!['User', 'Group'].includes(owner.type) || !Number.isSafeInteger(g.playing) || g.playing < 0) throw new AppError('INVALID_RESPONSE', 'Invalid game owner or CCU.');
-      return { id: apiId(g.id), name: text(g.name), owner: { id: apiId(owner.id), name: text(owner.name), type: owner.type }, ccu: g.playing };
-    });
-  }
+  details(universeIds: string[]): Promise<GameDetails[]> { return publicGameDetails(this.http, universeIds); }
 }

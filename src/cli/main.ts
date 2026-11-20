@@ -5,6 +5,7 @@ import { registerConfigs } from './commands/configs.js';
 import { registerAuthPermissions } from './commands/auth-permissions.js';
 import { registerPlaces } from './commands/places.js';
 import { registerEvents } from './commands/events.js';
+import { registerGames } from './commands/games.js';
 import { registerDeveloperProducts } from './commands/devproducts.js';
 import { registerExperiments } from './commands/experiments.js';
 import { registerLocalizationTable } from './commands/localization-table.js';
@@ -197,6 +198,7 @@ auth.command('clear').description('Remove the saved key; retain local catalogs')
 });
 
 const universe = program.command('universe').description('Discover, refresh and inspect local game catalogs');
+registerGames(program, { store, json, signal: abort.signal });
 async function mutate(mode: 'scan' | 'refresh' | 'add', universeId?: string): Promise<void> {
   if (universeId) id(universeId);
   const local = store(), client = api(await new CredentialStore(local.home).get()), identity = await client.identity();
