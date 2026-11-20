@@ -18,7 +18,7 @@ local function identity(key, source, context)
     return Http:JSONEncode({ key or "", source, context or "" })
 end
 local function report(data)
-    print(Http:JSONEncode(data))
+    return Http:JSONEncode(data)
 end
 `;
 }
@@ -71,7 +71,7 @@ local notFound = {}
 for _, source in payload.sources do
     if not found[source] then table.insert(notFound, source) end
 end
-report({
+return report({
     placeId = payload.placeId, table = payload.table, sourceLocale = sourceLocale, locales = locales,
     total = total, matching = matching, missingEntries = missingEntries,
     missingByLocale = byLocale, entries = entries, notFound = notFound,
@@ -129,8 +129,7 @@ for _, row in payload.entries do
     end
 end
 if #conflicts > 0 then
-    report({ status = "conflict", conflicts = conflicts })
-    return
+    return report({ status = "conflict", conflicts = conflicts })
 end
 if not payload.dryRun and #pending > 0 then
     local ok, err = pcall(function()
@@ -149,7 +148,7 @@ if not payload.dryRun and #pending > 0 then
         error(err)
     end
 end
-report({
+return report({
     status = if payload.dryRun then "preview" else "verified",
     addedEntries = added, modifiedEntries = modified, updatedValues = #pending, unchangedValues = unchanged,
 })

@@ -520,25 +520,20 @@ await localization.write('123', { ja: { title: 'サンプルゲーム' } }, {
 
 ## 游戏内本地化表
 
-游戏内译文保存在 Studio 的原生 `LocalizationTable` 中，随 Place 发布。使用 `rbx localization table` 为编辑态 Studio 生成读取和写入 Luau，Agent 将 `--json` 的 `data.studioLuau` 交给 `robloxstudio-mcp` 的 `execute_luau`，并核对 Studio 输出。示例采用名称 `GameTranslations`。
+`rbx localization table` 通过官方 Studio MCP 直接读写编辑态的 `game.LocalizationService.GameTranslations`。在 Windows 上打开目标 Place，并启用 Studio 的 MCP server。CLI 自动启动本机 `mcp.bat`，按 `--place` 精确选择编辑态会话。每次更新在 Studio 内核对旧值并回读。
 
-```bash
-# 汇总条数、缺译及每种语言的覆盖
-rbx --json localization table read --place 123 --table GameTranslations
-
-# 从 Studio 返回指定原文的词条，包括不同 Key 或 Context 的匹配项
-rbx --json localization table read --place 123 --table GameTranslations --source "My Booth"
-rbx --json localization table read --place 123 --table GameTranslations --missing
-
-# 将上一步 Studio 输出中的 JSON 保存为 missing.json，再补译并生成待写入的差量
-rbx --json localization table translate --file missing.json --out translations.patch.json
-rbx --json localization table write --place 123 --table GameTranslations --file translations.patch.json --dry-run
-rbx --json localization table write --place 123 --table GameTranslations --file translations.patch.json
+```powershell
+rbx localization table read --place 123
+rbx --json localization table read --place 123 --source "My Booth" --locale ja
+rbx localization table read --place 123 --missing
+rbx localization table write --place 123 --source "My Booth" --locale zh-hans --text "我的展位" --dry-run
+rbx localization table translate --place 123 --dry-run
+rbx localization table translate --place 123
 ```
 
-`read` 默认检查 17 种译文语言。用 `--locales <code...>` 指定项目的语言范围。`--source` 按原文逐字匹配，`--missing` 输出对应的缺译词条。`translate` 按读取结果指定的语言补译，以英文源文及已有的简中作输入，校验占位符、富文本标签和换行。成功项输出为差量，失败项列于 warnings（退出码 3）。缓存复用 `localization-cache/translations.jsonl`，仅有未命中项时才加载 DeepSeek Key、解析模型和发请求。凭证配置使用 `rbx deepseek auth set`、`rbx deepseek models` 和 `rbx deepseek config`。
+`read` 默认只返回覆盖统计。`--source` 逐字匹配原文，`--locale` 只显示指定语言。`--locales <code...>` 可调整缺译检查和补译范围，默认使用 17 种译文语言。
 
-手动加词或改词可直接提供 UTF-8 JSON。`key` 和 `context` 缺省为空，`source` 保留原文空白、换行和大小写。`values` 只写需要改的语言。`expected` 填逐字匹配的旧值，`null` 表示该语言在词条中缺席。
+`write` 可以直接传单条原文、语言和新译文，也可以用 `--file` 提交批量差量。单条命令先读当前旧值。批量 JSON 中，`key` 和 `context` 缺省为空，`expected` 要逐字匹配旧值，`null` 表示该语言原先没有译文。示例只新增一条简中译文。
 
 ```json
 {
@@ -552,7 +547,9 @@ rbx --json localization table write --place 123 --table GameTranslations --file 
 }
 ```
 
-Studio 写入前核对 Place ID、编辑态、表名和整批旧值，已符合的值跳过，有冲突时返回 `status=conflict`，整批等待重新读取。自动生成的补译差量也校验用于翻译的简中提示。`--dry-run` 在 Studio 执行时只返回变更计数。以 Studio 回读返回的 `status=verified` 作为写入成功依据。
+`translate` 一次完成查缺、查缓存、DeepSeek 补译和写回。英文和已有简中用于补译，简中缺项需手动维护。未通过占位符、富文本标签或换行校验的译文列于 warnings。缓存位于 `localization-cache/translations.jsonl`，仅有需要模型处理的缺项时才读取 DeepSeek Key。凭证使用 `rbx deepseek auth set` 配置。
+
+`--dry-run` 只查旧值或估算缺项与缓存。写入冲突时整批暂停并返回 `conflict`（退出码 3）。回执丢失时 CLI 重新读表确认目标值，有疑问时报告结果待确认。
 
 ## Configs 与 A/B 实验
 

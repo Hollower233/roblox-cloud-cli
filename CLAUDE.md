@@ -153,7 +153,7 @@
 ## 游戏内本地化表
 
 - 原生表的差量、缺译与补译：`src/localization/table.ts`。编辑态 Studio 读写脚本：`src/localization/studio-table.ts`。
-- CLI：`localization table read/write/translate`、`deepseek auth/models/config`（`src/cli/commands/localization-table.ts`）。读写脚本由 Agent 通过 `robloxstudio-mcp` 执行。SDK 导出：`src/index.ts`。
+- CLI：`localization table read/write/translate`、`deepseek auth/models/config`（`src/cli/commands/localization-table.ts`）。通过 `src/studio/mcp.ts` 直连 Windows 官方 MCP，统一读写 `LocalizationService.GameTranslations`。SDK 导出：`src/index.ts`。
 - DeepSeek Key 存 `deepseek.dpapi`，模型配置 `deepseek.json`，译文缓存 `localization-cache/translations.jsonl`。编辑态读写和命中缓存的补译无需联网。
 - 离线验证：`tests/localization-table.test.ts`。
 
