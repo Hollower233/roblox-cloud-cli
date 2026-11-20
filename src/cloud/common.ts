@@ -30,6 +30,13 @@ export interface WriteReceipt {
   request: CloudRequest; backupPath?: string; response?: JsonObject; readback?: JsonObject;
   operationId?: string; error?: ReturnType<typeof errorInfo>;
 }
+/** Preserve assigned IDs and uncertain outcomes beside the pre-write backup. */
+export async function saveWriteReceipt(receipt: WriteReceipt): Promise<WriteReceipt> {
+  if (!receipt.backupPath) return receipt;
+  try { await writeFile(`${receipt.backupPath}.result.json`, JSON.stringify(receipt, null, 2), { flag: 'wx', mode: 0o600 }); }
+  catch { return { ...receipt, state: 'unverified', error: { code: 'STORAGE_ERROR', message: 'Operation may have completed, but its local result could not be saved. Inspect returned IDs before retrying.' } }; }
+  return receipt;
+}
 export async function backup(directory: string | undefined, universeId: string, request: CloudRequest, before: unknown): Promise<string | undefined> {
   if (!directory) return undefined;
   const path = join(directory, `${universeId}-${Date.now()}-${randomUUID()}.json`);

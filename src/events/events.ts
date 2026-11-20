@@ -1,8 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
-import { backup, object, type JsonObject, type WriteOptions, type WriteReceipt } from '../cloud/common.js';
+import { backup, saveWriteReceipt, object, type JsonObject, type WriteOptions, type WriteReceipt } from '../cloud/common.js';
 import { AppError, errorInfo, id } from '../core/errors.js';
 import type { HttpClient } from '../transport/http-client.js';
-import { saveEventReceipt } from './receipts.js';
 import { validateEventText, type EventTextField } from './rules.js';
 
 const BASE = 'https://apis.roblox.com/virtual-events/v3';
@@ -132,7 +131,7 @@ export class GameEvents {
     const receipt: WriteReceipt = { universeId, state: 'planned', request };
     if (options.dryRun) return receipt;
     receipt.backupPath = await backup(options.backupDirectory, universeId, request, null);
-    return saveEventReceipt(await this.write(receipt));
+    return saveWriteReceipt(await this.write(receipt));
   }
   async update(value: string, fields: Partial<EventFields>, options: WriteOptions = {}): Promise<WriteReceipt> {
     eventId(value);
@@ -146,7 +145,7 @@ export class GameEvents {
     const receipt: WriteReceipt = { universeId: String(before.universeId), state: 'planned', request };
     if (options.dryRun) return { ...receipt, readback: before };
     receipt.backupPath = await backup(options.backupDirectory, receipt.universeId, request, before);
-    return saveEventReceipt(await this.write(receipt, value));
+    return saveWriteReceipt(await this.write(receipt, value));
   }
   async delete(value: string, options: WriteOptions = {}): Promise<WriteReceipt> {
     const before = await this.get(eventId(value));
@@ -157,10 +156,10 @@ export class GameEvents {
     try {
       const result = await this.http.request<{ status: number }>(request.url, { auth: true, method: 'DELETE', rawResponse: true });
       if (result.status !== 204) throw new AppError('INVALID_RESPONSE', 'Event deletion did not return the documented 204 response.');
-      return saveEventReceipt({ ...receipt, state: 'verified' });
+      return saveWriteReceipt({ ...receipt, state: 'verified' });
     } catch (error) {
       if (!ambiguous(error)) throw error;
-      return saveEventReceipt({ ...receipt, state: 'unverified', error: errorInfo(error) });
+      return saveWriteReceipt({ ...receipt, state: 'unverified', error: errorInfo(error) });
     }
   }
   private async write(receipt: WriteReceipt, expectedId?: string): Promise<WriteReceipt> {

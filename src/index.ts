@@ -14,6 +14,8 @@ export { UserRestrictions, banBody } from './moderation/restrictions.js';
 export type { BanOptions } from './moderation/restrictions.js';
 export { downloadAssetImage, parseAssetId } from './assets/download.js';
 export type { AssetDownloadOptions } from './assets/download.js';
+export { getAssetOperation, uploadAssetImage } from './assets/upload.js';
+export type { AssetUploadOptions } from './assets/upload.js';
 export { clearAssetCache } from './cache/assets.js';
 export type { AssetCacheOptions, AssetCacheResult, CacheProcess, CacheTargetResult } from './cache/assets.js';
 export type { HttpOptions } from './transport/http-client.js';

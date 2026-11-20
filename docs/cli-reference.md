@@ -189,6 +189,23 @@ npm run test:live
 - [Universe 接口](https://create.roblox.com/docs/cloud/reference/features/universes)
 - [官方 OpenAPI 定义](https://github.com/Roblox/creator-docs/blob/main/content/en-us/reference/cloud/openapi.json)
 
+## 上传图片素材
+
+```powershell
+rbx asset upload ./cover.png --name "Seasonal Cover" --group 123456 --dry-run
+rbx --json asset upload ./cover.png --name "Seasonal Cover" --group 123456
+rbx asset upload ./sticker.jpeg --type decal --name "Sticker" --user 123456
+rbx asset operation <operation-id>
+```
+
+默认类型为 `image`，可选 `decal`。必须提供 `--name`，并从 `--group <id>` 和 `--user <id>` 中任选其一。可用 `--description` 填写简介。支持 PNG/JPEG，最大 20 MB，宽和高各小于 8000 像素。上传发送原始字节，保留尺寸和透明度。`--dry-run` 无需凭证，仅在本地校验并显示文件信息和归属。
+
+上传使用 CLI 配置的 Open Cloud API Key。权限检查使用 `rbx auth check --for asset-upload`（`asset:read/write`）或 `rbx auth check --for asset-operation`（`asset:read`），实际 creator 权限由 Roblox 校验。
+
+提交前将请求摘要和原图写入应用数据目录的 `asset-backups/`。收到操作 ID 后先写入 `.operation.json`，再最多轮询十次；结果存入 `.result.json`。若返回 `pending` 或 `unverified`，退出码为 3。有操作 ID 时用 `asset operation` 继续查询，接受完整 `operations/…` 或裸 ID。没有操作 ID 时先到 Creator Dashboard 核对结果，再决定是否重传。
+
+`verified` 表示创建操作已返回素材 ID。输出中的 `response.assetUri` 可填入 `ImageLabel.Image`；`response.moderationState` 单独显示 Roblox 返回的审核状态，实际加载还取决于审核和素材访问权限。SDK 导出 `uploadAssetImage` 和 `getAssetOperation`；实际上传须提供 `backupDirectory`。 [Roblox Assets 上传指南](https://create.roblox.com/docs/cloud/guides/usage-assets)
+
 ## 清理本机游戏素材缓存（Windows）
 
 ```sh

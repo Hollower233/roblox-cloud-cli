@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from 'commander';
 import { commandContext } from './context.js';
+import { registerAssetUploads } from './commands/assets.js';
 import { registerConfigs } from './commands/configs.js';
 import { registerAuthPermissions } from './commands/auth-permissions.js';
 import { registerPlaces } from './commands/places.js';
@@ -48,6 +49,7 @@ const program = new Command().name('rbx').description('Roblox Cloud CLI: credent
   .option('--home <directory>', 'Override the local application data directory')
   .option('--json', 'Emit one JSON object on stdout; partial result exits with 3')
   .exitOverride().configureOutput({ outputError: () => {} });
+const cloudContext = commandContext(program, abort.signal);
 function store(): LocalStore { return new LocalStore(resolve(program.opts().home ?? defaultHome())); }
 function json(): boolean { return Boolean(program.opts().json); }
 async function resolvePlayers(input: string, http: HttpClient) {
@@ -60,8 +62,8 @@ function api(key: string): RobloxApi { return new RobloxApi(new HttpClient({ api
 function service(client: RobloxApi): CatalogService { return new CatalogService(client, { signal: abort.signal, progress: message => { process.stderr.write(clean(message) + '\n'); } }); }
 function envWarning(): Warning[] { return process.env.ROBLOX_API_KEY !== undefined ? [{ code: 'ENV_KEY_OVERRIDES_STORED_KEY', message: 'ROBLOX_API_KEY takes precedence over the saved credential.' }] : []; }
 
-program.command('asset').description('Download original Roblox images')
-  .command('download <assetId>').description('Download delivered PNG/JPEG bytes, resolving XML Decal textures')
+const asset = program.command('asset').description('Upload Roblox images and download original images');
+asset.command('download <assetId>').description('Download delivered PNG/JPEG bytes, resolving XML Decal textures')
   .option('-o, --output <path>', 'Output file path (default: <assetId>.<detected extension>); never overwrites')
   .action(async (input: string, options) => {
     const assetId = parseAssetId(input);
@@ -69,6 +71,7 @@ program.command('asset').description('Download original Roblox images')
     const result = await downloadAssetImage(new HttpClient({ apiKey: key, signal: abort.signal }), assetId, { output: options.output, signal: abort.signal });
     emit(result, json(), `Saved original image: ${result.path}\n${result.width}x${result.height} ${result.format}, ${result.bytes} bytes\nSHA-256: ${result.sha256}`);
   });
+registerAssetUploads(asset, cloudContext);
 
 const group = program.command('group').description('Query and manage group member roles');
 async function groupClient() {
@@ -266,7 +269,6 @@ player.command('remove <player>').description('Remove one player from the local 
   emit({ removed: saved }, json(), `Removed ${clean(saved.name)} (${saved.userId}) from the local player catalog.`);
 });
 
-const cloudContext = commandContext(program, abort.signal);
 const datastore = program.command('datastore').description('Read standard and ordered DataStore entries, and copy standard entries');
 datastore.command('get <universeId> <datastore> <key>').option('--scope <scope>', 'DataStore scope', 'global')
   .action(async (universeId, name, key, options) => {

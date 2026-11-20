@@ -42,7 +42,8 @@ export function commandContext(program: Command, signal: AbortSignal): CommandCo
       const warnings = ['unverified', 'pending'].includes(result.state)
         ? [{ code: result.error?.code ?? result.state.toUpperCase(), message: result.error?.message ?? 'Operation is not confirmed complete; inspect state before retrying.', resource: result.operationId ?? result.universeId }]
         : [];
-      const human = `Universe: ${result.universeId}\nState: ${result.state}${result.operationId ? `\nOperation: ${result.operationId}` : ''}${result.backupPath ? `\nBackup: ${result.backupPath}` : ''}\n${JSON.stringify(result, null, 2).split('\n').map(clean).join('\n')}`;
+      const universe = result.universeId ? `Universe: ${result.universeId}\n` : '';
+      const human = `${universe}State: ${result.state}${result.operationId ? `\nOperation: ${result.operationId}` : ''}${result.backupPath ? `\nBackup: ${result.backupPath}` : ''}\n${JSON.stringify(result, null, 2).split('\n').map(clean).join('\n')}`;
       emit(result, json(), human, warnings);
     },
   };
