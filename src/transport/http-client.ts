@@ -26,7 +26,7 @@ export class HttpClient {
     this.queues.set(host, task);
     await task;
   }
-  async request<T>(url: string, options: { auth?: boolean; cookieAuth?: boolean; method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; rawBody?: string; form?: FormData; headers?: Record<string, string>; rawResponse?: boolean; validationDetails?: boolean } = {}): Promise<T> {
+  async request<T>(url: string, options: { auth?: boolean; cookieAuth?: boolean; method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; rawBody?: string; form?: FormData; headers?: Record<string, string>; rawResponse?: boolean; validationDetails?: boolean; signal?: AbortSignal } = {}): Promise<T> {
     const target = new URL(url);
     if (target.protocol !== 'https:' || !hosts.has(target.host) || target.username || target.password) throw new AppError('ARGUMENT_ERROR', 'Unsupported Roblox API destination.');
     if (options.auth && target.host !== 'apis.roblox.com') throw new AppError('ARGUMENT_ERROR', 'API keys may only be sent to apis.roblox.com.');
@@ -56,12 +56,16 @@ export class HttpClient {
       if (!['content-md5', 'roblox-entry-attributes', 'roblox-entry-userids'].includes(name)) throw new AppError('ARGUMENT_ERROR', 'Unsupported request header.');
     }
     let csrfToken: string | undefined;
+    const cancellation = options.signal && this.options.signal
+      ? AbortSignal.any([options.signal, this.options.signal]) : options.signal ?? this.options.signal;
+    const wait = (ms: number) => options.signal ? delay(ms, undefined, { signal: cancellation }) : this.sleep(ms);
     for (let attempt = 0; ; attempt++) {
       try {
-        this.options.signal?.throwIfAborted();
+        cancellation?.throwIfAborted();
         await this.pace(target.host);
+        cancellation?.throwIfAborted();
         const timeout = AbortSignal.timeout(this.options.timeoutMs ?? 25_000);
-        const signal = this.options.signal ? AbortSignal.any([timeout, this.options.signal]) : timeout;
+        const signal = cancellation ? AbortSignal.any([timeout, cancellation]) : timeout;
         const response = await this.fetcher(target, {
           method,
           headers: {
@@ -104,7 +108,7 @@ export class HttpClient {
             const header = response.headers.get('retry-after');
             const requested = header === null ? NaN : /^\d+(\.\d+)?$/.test(header) ? Number(header) * 1000 : Date.parse(header) - Date.now();
             if (Number.isFinite(requested) && requested > 30_000) throw new AppError('HTTP_ERROR', 'Rate limited; retry after the server cooldown.', response.status);
-            await this.sleep(Math.max(0, Number.isFinite(requested) ? requested : Math.min(30_000, 1000 * 2 ** attempt + Math.random() * 250)));
+            await wait(Math.max(0, Number.isFinite(requested) ? requested : Math.min(30_000, 1000 * 2 ** attempt + Math.random() * 250)));
             continue;
           }
           const code = response.status === 401 ? 'AUTH_INVALID' : response.status === 403 ? 'FORBIDDEN' : 'HTTP_ERROR';
@@ -119,10 +123,10 @@ export class HttpClient {
         try { return await response.json() as T; }
         catch { throw new AppError('INVALID_RESPONSE', 'Roblox returned invalid JSON.'); }
       } catch (error) {
-        if (this.options.signal?.aborted) throw new AppError('CANCELLED', 'Operation cancelled.');
+        if (cancellation?.aborted) throw new AppError('CANCELLED', 'Operation cancelled.');
         if (error instanceof AppError) throw error;
         if (error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name)) throw new AppError('TIMEOUT', 'Roblox request timed out.');
-        if (retryable && attempt < (this.options.retries ?? 3)) { await this.sleep(1000 * 2 ** attempt); continue; }
+        if (retryable && attempt < (this.options.retries ?? 3)) { await wait(1000 * 2 ** attempt); continue; }
         throw new AppError('NETWORK_ERROR', 'Could not connect to Roblox.');
       }
     }

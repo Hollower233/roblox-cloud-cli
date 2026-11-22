@@ -8,6 +8,17 @@ import { AppError } from '../core/errors.js';
 export async function withStudioEdit<T>(
   placeId: string, signal: AbortSignal, run: (execute: (code: string) => Promise<unknown>) => Promise<T>,
 ): Promise<T> {
+  return withStudioEditSession(placeId, signal, session => run(session.execute));
+}
+
+export interface StudioEditSession {
+  execute(code: string, timeoutMs?: number): Promise<unknown>;
+  save(): Promise<unknown>;
+}
+
+export async function withStudioEditSession<T>(
+  placeId: string, signal: AbortSignal, run: (session: StudioEditSession) => Promise<T>,
+): Promise<T> {
   if (process.platform !== 'win32') throw new AppError('UNSUPPORTED_PLATFORM', 'Official Studio MCP integration currently supports Windows.');
   const local = process.env.LOCALAPPDATA;
   const launcher = local && join(local, 'Roblox', 'mcp.bat');
@@ -57,14 +68,16 @@ export async function withStudioEdit<T>(
       rejectCurrent = undefined;
     }
   };
-  const tool = async (name: string, args: object): Promise<unknown> => {
-    const result = await request('tools/call', { name, arguments: args }) as {
+  const tool = async (name: string, args: object, timeoutMs?: number): Promise<unknown> => {
+    const result = await request('tools/call', { name, arguments: args }, timeoutMs) as {
       isError?: boolean; structuredContent?: unknown; content?: { text?: string }[];
     } | null;
     if (result?.isError) throw new AppError('INVALID_RESPONSE', `Studio MCP ${name} failed: ${(result.content?.[0]?.text ?? '').slice(0, 350)}`);
     if (result?.structuredContent !== undefined) return result.structuredContent;
-    try { return JSON.parse(result?.content?.[0]?.text ?? ''); }
-    catch { throw new AppError('INVALID_RESPONSE', `Studio MCP returned no JSON for ${name}.`); }
+    for (const block of result?.content ?? []) {
+      try { return JSON.parse(block.text ?? ''); } catch { /* Some tools put a human summary before their JSON. */ }
+    }
+    throw new AppError('INVALID_RESPONSE', `Studio MCP returned no JSON for ${name}.`);
   };
   try {
     await request('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'roblox-cloud-cli', version: '0.1.0' } });
@@ -75,7 +88,10 @@ export async function withStudioEdit<T>(
       const matches = list.studios.filter(studio => String(studio.placeId) === placeId && studio.mode === 'Edit');
       if (matches.length > 1) throw new AppError('STUDIO_NOT_FOUND', `Multiple Studio edit sessions for Place ${placeId}.`);
       const studioId = matches[0]?.id;
-      if (studioId) return await run(code => tool('execute_luau', { studio_id: studioId, datamodel_type: 'Edit', code }));
+      if (studioId) return await run({
+        execute: (code, timeoutMs) => tool('execute_luau', { studio_id: studioId, datamodel_type: 'Edit', code }, timeoutMs),
+        save: () => tool('save_place', { studio_id: studioId }, 30_000),
+      });
       if (attempt < 19) await delay(250);
     }
     throw new AppError('STUDIO_NOT_FOUND', `No Studio edit session for Place ${placeId}.`);

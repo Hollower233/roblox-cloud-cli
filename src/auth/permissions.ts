@@ -60,6 +60,10 @@ const features: PermissionFeature[] = [
     ['移除使用 Roblox 会话，API Key 用于核对目标。Key 检查不验证会话权限。']),
   feature('places-versions', '读取 Place 版本历史', ['places versions list'], ['universe.place:read']),
   feature('places-version-notes', '设置并核对 Place 版本备注', ['places version-notes set'], ['universe.place:read', 'universe.place:write']),
+  feature('studio-save-title', '为 Studio 新保存的版本设置标题', ['studio save --title'], ['universe.place:write'],
+    ['Studio 保存由本机编辑会话发起。未指定 --title 时无需 Roblox API Key。']),
+  feature('studio-publish', '核对 Studio 批量发布的目标与版本', ['studio publish'], ['universe:read', 'universe.place:read'],
+    ['API Key 用于核对目标和读取版本。实际发布权限由 Studio 登录账号决定。']),
   feature('places-social-slots', '查询和修改 Place 的 Social Slots', ['places social-slots read', 'places social-slots write'], [],
     ['通过 rbx auth cookie set 配置有目标 Place 管理权限的 Roblox 会话。Key 检查不验证 Cookie 或账号的 Place 权限。']),
   feature('servers-status', '预估服务器重启影响', ['servers status'], ['universe:read']),
@@ -79,7 +83,7 @@ const features: PermissionFeature[] = [
   feature('icon-countdown', '自动生成并运行图标倒计时', ['icon countdown', 'icon now', 'icon restore', 'icon resume'], [...iconWrite, 'legacy-asset:manage'], ['旧文件夹模式不下载底图，无需 legacy-asset:manage。素材的 Owner 范围需要单独核实。']),
   feature('localization-read', '读取游戏标题和简介', ['localization read'], ['universe:read']),
   feature('localization-write', '修改游戏标题和简介', ['localization write'], ['universe:read', 'legacy-universe:manage', 'universe.place:write'], ['仅修改其他语言时无需 universe.place:write；源语言通过根 Place 修改。']),
-  feature('local', '本机及公开查询功能', ['auth permissions', 'universe list', 'player', 'game', 'play', 'cache clear', 'studio open', 'studio patch', 'studio close', 'studio list', 'studio save', 'studio publish', 'icon status', 'localization table read', 'localization table write', 'localization table translate', 'events categories', 'events rules'], [], ['本地缓存、玩家和游戏清单、公开游戏搜索、Player 启动及 Studio 会话操作无需 Roblox API Key。游戏内缺译通过 DeepSeek 补齐时使用独立 Key。']),
+  feature('local', '本机及公开查询功能', ['auth permissions', 'universe list', 'player', 'game', 'play', 'cache clear', 'studio open', 'studio patch', 'studio close', 'studio list', 'studio save', 'icon status', 'localization table read', 'localization table write', 'localization table translate', 'events categories', 'events rules'], [], ['本地缓存、玩家和游戏清单、公开游戏搜索、Player 启动及 Studio 本机操作无需 Roblox API Key。Studio 保存附加标题时需要 Key。游戏内缺译通过 DeepSeek 补齐时使用独立 Key。']),
 ];
 
 /** Returns independent copies so SDK consumers cannot mutate the built-in catalog. */

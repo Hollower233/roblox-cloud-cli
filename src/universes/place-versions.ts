@@ -31,11 +31,11 @@ function parseVersion(value: unknown): PlaceVersion {
 }
 
 /** Read one page of version history, starting with the latest versions. */
-export async function listPlaceVersions(http: HttpClient, placeId: string, cursor?: string): Promise<PlaceVersionPage> {
+export async function listPlaceVersions(http: HttpClient, placeId: string, cursor?: string, signal?: AbortSignal): Promise<PlaceVersionPage> {
   const query = new URLSearchParams({ pageSize: '50' });
   if (cursor) query.set('cursor', cursor);
   const page = await http.request<{ placeVersions?: unknown; nextCursor?: unknown; hasMore?: unknown } | null>(
-    `${versionHistoryUrl(placeId)}/history?${query}`, { auth: true },
+    `${versionHistoryUrl(placeId)}/history?${query}`, { auth: true, ...(signal ? { signal } : {}) },
   );
   if (!page || !Array.isArray(page.placeVersions) || typeof page.hasMore !== 'boolean'
     || (page.hasMore && (typeof page.nextCursor !== 'string' || !page.nextCursor))) {
@@ -45,15 +45,28 @@ export async function listPlaceVersions(http: HttpClient, placeId: string, curso
   return { placeId, versions: page.placeVersions.map(parseVersion), nextCursor };
 }
 
-/** Update exactly one version, then verify the title and description through version history. */
-export async function setPlaceVersionNotes(http: HttpClient, placeId: string, version: string, title: string, details = ''): Promise<PlaceVersion> {
-  const url = `${versionHistoryUrl(placeId)}/version/${id(version)}/notes`;
-  const normalizedTitle = title.trim();
-  const description = details.replace(/\r\n?/g, '\n').trim();
-  if (!normalizedTitle || /[\r\n]/.test(normalizedTitle)) {
+export function normalizePlaceVersionTitle(title: string): string {
+  const normalized = title.trim();
+  if (!normalized || /[\r\n]/.test(normalized)) {
     throw new AppError('ARGUMENT_ERROR', 'Provide a non-empty single-line version title.');
   }
-  await http.request(url, { auth: true, method: 'POST', body: { title: normalizedTitle, description } });
+  return normalized;
+}
+
+/** Submit notes for a specific version. The HTTP receipt confirms acceptance. */
+export async function writePlaceVersionNotes(http: HttpClient, placeId: string, version: string, title: string, details = ''): Promise<void> {
+  const url = `${versionHistoryUrl(placeId)}/version/${id(version)}/notes`;
+  await http.request(url, {
+    auth: true, method: 'POST', rawResponse: true,
+    body: { title: normalizePlaceVersionTitle(title), description: details.replace(/\r\n?/g, '\n').trim() },
+  });
+}
+
+/** Update exactly one version, then verify the title and description through version history. */
+export async function setPlaceVersionNotes(http: HttpClient, placeId: string, version: string, title: string, details = ''): Promise<PlaceVersion> {
+  const normalizedTitle = normalizePlaceVersionTitle(title);
+  const description = details.replace(/\r\n?/g, '\n').trim();
+  await writePlaceVersionNotes(http, placeId, version, normalizedTitle, description);
 
   const seen = new Set<string>();
   let cursor: string | undefined;

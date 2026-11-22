@@ -732,15 +732,17 @@ rbx studio close --all                # 软关闭全部编辑会话（不可与 
 ## Studio 保存与发布
 
 ```powershell
-rbx studio save
-rbx studio publish
+rbx --json studio save --source-place 123 --title "Update 1"
+rbx --json studio publish --source-place 123 --universe 456 --place 789 790 791
 rbx --json places versions list --place "<PlaceId>"
 rbx --json places version-notes set --place "<PlaceId>" --version "<版本号>" --title "Update 1" --details "Market board display update."
 ```
 
-- 两个 Studio 命令只输出 Agent 执行提示，`--json` 时正文位于 `data.agentInstruction`。源 Place、目标和备注由 Agent 从任务中取得。
-- 保存通过官方 Studio MCP 的 `save_place` 发起。最多等 30 秒确认回执中的确切新版本可在云端查到，随后设置备注并回读。返回已有版本或无法确认新版本时停止。
-- 发布通过官方 Studio MCP 覆盖已有 Place，以同一 Studio 会话在本次调用后的输出确认结果。每个 Place 最多等 5 分钟，指数退避单次最多 30 秒。失败或结果未知时停止。
+- 两条命令都需要 Windows、官方 Studio MCP 与指定源 Place 的唯一 Edit 会话。命令直接执行，`--json` 返回结构化结果。发布使用该会话的当前编辑内容。
+- `save` 调用一次 `save_place`，最多等 30 秒，以 `Saved` 回执的版本号为准。Studio 返回 `NotNeeded` 时跳过标题。带 `--title` 时，CLI 只向确切的新版本提交标题，凭服务端写入回执标记 `titleState: accepted`，省去云端回读。标题需要 API Key 的 `universe.place:write`。如果标题写入失败或结果未知，仍返回保存版本号和退出码 3，可按版本补写标题。
+- `publish` 发布到目标 Universe 的已有 Place。CLI 预先核对全部所选 Place 的归属，按指定顺序逐个提交，选中 Root 时最后发布。需要 `universe:read` 与 `universe.place:read` 核对目标和读版本，实际写操作由 Studio 登录账号发起。
+- 每个 Place 默认最多等 300 秒，可用 `--timeout` 调整。CLI 监听 Studio 完成事件和带目标 ID 的新增日志，同时查询云端版本。带目标 ID 的完成日志和云端新发布版本一致时确认成功。云端版本推进本身无法唯一归因，因此不要同时从其他会话发布同一个目标。
+- 已结束的失败或未确认请求在 Studio 回到源 Place 后可继续下一个目标，包括 Root。如果无法确认 Studio 已结束上一笔请求或已恢复源会话，剩余目标返回 `not_started`。最终 `data.results` 中逐项返回 `published`、`failed`、`unknown` 或 `not_started`。有未完成项时退出码为 3。CLI 不自动重发；补发可显式指定对应 Place，`unknown` 先查原请求结果。
 - `places versions list` 返回一页版本和 `nextCursor`，可用 `--cursor` 继续读取，权限为 `universe.place:read`。
 - `places version-notes set` 只更新指定版本的备注，省略 `--details` 时提交空详情。写入和回读分别需要 `universe.place:write` 和 `universe.place:read`。回读不匹配时返回失败，不自动重复写入。
 

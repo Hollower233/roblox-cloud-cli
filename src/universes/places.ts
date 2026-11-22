@@ -74,13 +74,27 @@ async function placeDirectory(http: HttpClient, universeId: string): Promise<str
   return [...places];
 }
 
-export async function listPlaces(http: HttpClient, universeId: string): Promise<PlaceInfo[]> {
-  const ids = await placeDirectory(http, universeId);
-  const universe = object(await http.request(`https://apis.roblox.com/cloud/v2/universes/${id(universeId)}`, { auth: true }), true);
+export async function getUniversePlaceDirectory(http: HttpClient, universeId: string) {
+  const [ids, response] = await Promise.all([
+    placeDirectory(http, universeId),
+    http.request(`https://apis.roblox.com/cloud/v2/universes/${id(universeId)}`, { auth: true }),
+  ]);
+  const universe = object(response, true);
   const root = typeof universe.rootPlace === 'string' ? new RegExp(`^universes/${universeId}/places/([1-9]\\d*)$`).exec(universe.rootPlace)?.[1] : undefined;
   if (!root || !ids.includes(root)) throw new AppError('INVALID_RESPONSE', 'Place directory is missing the universe root Place.');
+  const group = typeof universe.group === 'string' ? /^groups\/([1-9]\d*)$/.exec(universe.group)?.[1] : undefined;
+  const user = typeof universe.user === 'string' ? /^users\/([1-9]\d*)$/.exec(universe.user)?.[1] : undefined;
+  const owner = universe.path === `universes/${universeId}`
+    ? group && !user ? { type: 'Group' as const, id: responseId(group) }
+      : user && !group ? { type: 'User' as const, id: responseId(user) } : undefined
+    : undefined;
+  return { placeIds: ids, rootPlaceId: root, owner };
+}
+
+export async function listPlaces(http: HttpClient, universeId: string): Promise<PlaceInfo[]> {
+  const { placeIds, rootPlaceId } = await getUniversePlaceDirectory(http, universeId);
   const places: PlaceInfo[] = [];
-  for (const placeId of ids) places.push(parsePlace(await http.request(url(universeId, placeId), { auth: true }), universeId, placeId, root));
+  for (const placeId of placeIds) places.push(parsePlace(await http.request(url(universeId, placeId), { auth: true }), universeId, placeId, rootPlaceId));
   return places;
 }
 

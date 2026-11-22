@@ -5,6 +5,7 @@ import { registerAssetUploads } from './commands/assets.js';
 import { registerConfigs } from './commands/configs.js';
 import { registerAuthPermissions } from './commands/auth-permissions.js';
 import { registerPlaces } from './commands/places.js';
+import { registerStudioRelease } from './commands/studio-release.js';
 import { registerEvents } from './commands/events.js';
 import { registerGames } from './commands/games.js';
 import { registerDeveloperProducts } from './commands/devproducts.js';
@@ -39,7 +40,6 @@ import { parseTargetTime, requireDuration } from '../icons/frames.js';
 import type { Catalog, Warning } from '../universes/models.js';
 import { closeStudio, findStudioExecutable, listStudioSessions, openStudio, resolveStudioTarget, windowsStudioSystem } from '../studio/launch.js';
 import { enableElevatedCapabilities, ensureInternalStudio, inspectInternalPatch, recordPatchReceipt, sha256 } from '../studio/internal.js';
-import { STUDIO_PUBLISH_PROMPT, STUDIO_SAVE_PROMPT } from '../studio/prompts.js';
 
 let diagnostics: ReturnType<typeof countdownLog> | undefined;
 const abort = new AbortController();
@@ -610,10 +610,7 @@ studio.command('list').description('List open Studio edit sessions with their Pl
   emit({ sessions }, json(), sessions.length ? sessions.map(s => `${s.pid}\t${s.placeId}\t${s.universeId ?? '—'}\t${clean(s.title ?? '')}`).join('\n') : '没有打开的 Studio 编辑会话');
 });
 
-studio.command('save').description('Print the Studio save workflow for an agent')
-  .action(() => emit({ agentInstruction: STUDIO_SAVE_PROMPT }, json(), STUDIO_SAVE_PROMPT));
-studio.command('publish').description('Print the Studio publish workflow for an agent')
-  .action(() => emit({ agentInstruction: STUDIO_PUBLISH_PROMPT }, json(), STUDIO_PUBLISH_PROMPT));
+registerStudioRelease(studio, cloudContext, json);
 
 try { await program.parseAsync(process.argv); }
 catch (error) {

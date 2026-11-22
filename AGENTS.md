@@ -179,10 +179,10 @@
 
 ## Studio 保存与发布
 
-- `studio save` 和 `studio publish` 只输出 Agent 提示，`--json` 使用 `data.agentInstruction`。命令入口为 `src/cli/main.ts`，提示词位于 `src/studio/prompts.ts`。
-- 保存由官方 MCP 发起，最多等 30 秒确认回执给出的新版本。通过 `places versions list` 读取版本，并用 `places version-notes set` 设置指定版本的标题和详情并回读。SDK 在 `src/universes/place-versions.ts`，权限分别见 `places-versions` 和 `places-version-notes`。
-- 覆盖发布由官方 MCP 发起，按本次 Studio 输出判断结果。每个目标最多等 5 分钟，指数退避单次最多 30 秒。真实保存或发布需用户明确要求。
-- 离线验证：`tests/place-versions.test.ts`。
+- `studio save` 和 `studio publish` 由 CLI 直接执行，都要求 `--source-place`，复用 `src/studio/mcp.ts` 的 Windows 官方 Studio MCP。命令注册：`src/cli/commands/studio-release.ts`。
+- 保存：`src/studio/save.ts`，使用一次 `save_place` 的确切云端版本回执，最多等 30 秒。可选 `--title` 只写新版本，凭写入回执确认，省去历史回读；`NotNeeded` 时不改旧版本。权限 `studio-save-title`。独立的版本历史和带详情的备注命令仍在 `src/universes/place-versions.ts`。
+- 发布：`src/studio/publish.ts`，显式 `--universe` 与 `--place <ids...>`，串行发布 Edit 会话当前内容，选中 Root 最后发。按目标日志及并行云端版本回读确认，Studio 结束并恢复源会话后才能继续。单目标默认 300 秒，逐项返回状态和版本。无自动重发。权限 `studio-publish`；真实保存或发布需用户明确要求。
+- 离线验证：`tests/place-versions.test.ts`、`tests/studio-release.test.ts`。
 
 ## 游戏活动
 
