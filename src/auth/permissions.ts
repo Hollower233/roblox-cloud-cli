@@ -76,7 +76,7 @@ const features: PermissionFeature[] = [
   feature('restriction-write', '封禁或解封玩家', ['ban', 'unban'], ['universe.user-restriction:write']),
   feature('group-read', '查询群组角色和成员', ['group roles', 'group member'], ['group:read']),
   feature('group-write', '添加或移除群组角色', ['group role grant', 'group role revoke'], ['group:read', 'group:write']),
-  feature('asset-download', '下载素材原图', ['asset download'], ['legacy-asset:manage'], ['下载目标素材的实际访问权仍由 Roblox 校验。']),
+  feature('asset-download', '下载素材原图或音频', ['asset download'], ['legacy-asset:manage'], ['下载目标素材的实际访问权仍由 Roblox 校验。']),
   feature('asset-upload', '上传图片素材', ['asset upload'], ['asset:read', 'asset:write'], ['素材归属由指定的 User 或 Group 决定；实际创建权限由 Roblox 校验。']),
   feature('asset-operation', '查询素材上传操作', ['asset operation'], ['asset:read']),
   feature('icon-generate', '获取当前图标并合成倒计时', ['icon generate'], [...iconRead, 'legacy-asset:manage']),

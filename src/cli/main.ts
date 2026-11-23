@@ -15,7 +15,7 @@ import { countdownLog } from './countdown-log.js';
 import { generatedCountdown, registerIconTasks } from './commands/icon-tasks.js';
 import { GroupRoles, groupPlayerInput } from '../groups/roles.js';
 import password from '@inquirer/password';
-import { downloadAssetImage, parseAssetId } from '../assets/download.js';
+import { downloadAsset, parseAssetId } from '../assets/download.js';
 import { clearAssetCache } from '../cache/assets.js';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -62,14 +62,17 @@ function api(key: string): RobloxApi { return new RobloxApi(new HttpClient({ api
 function service(client: RobloxApi): CatalogService { return new CatalogService(client, { signal: abort.signal, progress: message => { process.stderr.write(clean(message) + '\n'); } }); }
 function envWarning(): Warning[] { return process.env.ROBLOX_API_KEY !== undefined ? [{ code: 'ENV_KEY_OVERRIDES_STORED_KEY', message: 'ROBLOX_API_KEY takes precedence over the saved credential.' }] : []; }
 
-const asset = program.command('asset').description('Upload Roblox images and download original images');
-asset.command('download <assetId>').description('Download delivered PNG/JPEG bytes, resolving XML Decal textures')
+const asset = program.command('asset').description('Upload Roblox images and download original images or audio');
+asset.command('download <assetId>').description('Download delivered PNG/JPEG or Ogg/MP3/WAV bytes, resolving XML Decal textures')
   .option('-o, --output <path>', 'Output file path (default: <assetId>.<detected extension>); never overwrites')
   .action(async (input: string, options) => {
     const assetId = parseAssetId(input);
     const key = await new CredentialStore(store().home).get();
-    const result = await downloadAssetImage(new HttpClient({ apiKey: key, signal: abort.signal }), assetId, { output: options.output, signal: abort.signal });
-    emit(result, json(), `Saved original image: ${result.path}\n${result.width}x${result.height} ${result.format}, ${result.bytes} bytes\nSHA-256: ${result.sha256}`);
+    const result = await downloadAsset(new HttpClient({ apiKey: key, signal: abort.signal }), assetId, { output: options.output, signal: abort.signal });
+    const image = 'imageAssetId' in result;
+    const dimensions = image ? `${result.width}x${result.height} ` : '';
+    const kind = image ? 'image' : 'audio';
+    emit(result, json(), `Saved original ${kind}: ${result.path}\n${dimensions}${result.format}, ${result.bytes} bytes\nSHA-256: ${result.sha256}`);
   });
 registerAssetUploads(asset, cloudContext);
 

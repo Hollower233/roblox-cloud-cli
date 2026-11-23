@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { downloadAssetImage, parseAssetId } from '../src/assets/download.js';
+import { downloadAsset, downloadAssetImage, parseAssetId } from '../src/assets/download.js';
 import { HttpClient } from '../src/transport/http-client.js';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
@@ -52,4 +52,45 @@ test('rejects CDN destination injection and reports forbidden access', async () 
 test('rejects non-image bodies and cyclic Decals', async () => {
   await assert.rejects(downloadAssetImage(client(), '123', { fetch: async () => new Response('<html>error</html>') }), /not a supported/);
   await assert.rejects(downloadAssetImage(client(), '123', { fetch: async () => new Response('<roblox><Content name="Texture"><url>rbxassetid://123</url></Content></roblox>') }), /Cyclic/);
+});
+
+test('downloads supported audio bytes and keeps image-only callers restricted to images', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'rbx-audio-'));
+  const ogg = Buffer.alloc(36);
+  ogg.write('OggS');
+  ogg[26] = 1;
+  ogg[27] = 8;
+  ogg.write('OpusHead', 28);
+  const wav = Buffer.from('524946460400000057415645', 'hex');
+  const mp3 = Buffer.from('fffb9064', 'hex');
+  const taggedMp3 = Buffer.concat([Buffer.from('49443304000000000003ffffff', 'hex'), mp3]);
+  try {
+    for (const [index, { format, audio }] of [
+      { format: 'ogg', audio: ogg }, { format: 'wav', audio: wav },
+      { format: 'mp3', audio: mp3 }, { format: 'mp3', audio: taggedMp3 },
+    ].entries()) {
+      const output = join(dir, String(index) + '.provided');
+      const options = { output, fetch: async () => new Response(Uint8Array.from(audio)) };
+      const result = await downloadAsset(client(), 'rbxassetid://123', options);
+      assert.equal(result.assetId, '123');
+      assert.equal(result.format, format);
+      assert.equal(result.path, output);
+      assert.equal(result.bytes, audio.length);
+      assert.equal('imageAssetId' in result, false);
+      assert.deepEqual(await readFile(output), audio);
+      await assert.rejects(downloadAsset(client(), '123', options), /already exists/);
+      await assert.rejects(downloadAssetImage(client(), '123', options), /not a supported PNG\/JPEG/);
+    }
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('rejects ID3-only and rejects audio as a Decal texture', async () => {
+  const wav = Uint8Array.from(Buffer.from('524946460400000057415645', 'hex'));
+  const id3 = Uint8Array.from(Buffer.from('49443304000000000000', 'hex'));
+  await assert.rejects(downloadAsset(client(), '123', { fetch: async () => new Response(id3) }), /not a supported/);
+  let requests = 0;
+  await assert.rejects(downloadAsset(client(), '123', { fetch: async () => ++requests === 1
+    ? new Response('<roblox><Content name="Texture"><url>rbxassetid://456</url></Content></roblox>')
+    : new Response(wav) }), /not a supported/);
+  assert.equal(requests, 2);
 });

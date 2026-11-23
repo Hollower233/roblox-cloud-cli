@@ -206,6 +206,17 @@ rbx asset operation <operation-id>
 
 `verified` 表示创建操作已返回素材 ID。输出中的 `response.assetUri` 可填入 `ImageLabel.Image`；`response.moderationState` 单独显示 Roblox 返回的审核状态，实际加载还取决于审核和素材访问权限。SDK 导出 `uploadAssetImage` 和 `getAssetOperation`；实际上传须提供 `backupDirectory`。 [Roblox Assets 上传指南](https://create.roblox.com/docs/cloud/guides/usage-assets)
 
+## 下载素材
+
+```powershell
+rbx asset download 123456
+rbx --json asset download rbxassetid://123456 --output ./assets/hit.ogg
+```
+
+支持 PNG、JPEG、Ogg、MP3 和 WAV。命令按文件内容识别格式，保存 Roblox 返回的原始字节。XML Decal 会解析纹理引用并下载对应图片。默认写入当前目录的 `<assetId>.<扩展名>`，JPEG 使用 `.jpg`。`--output` 可指定完整文件路径，已有文件不会被覆盖。
+
+使用已配置的 Open Cloud API Key，可通过 `rbx auth check --for asset-download` 检查 `legacy-asset:manage`。实际读取权限由 Roblox 按素材校验。JSON 回执提供 `assetId`、`path`、`format`、`bytes` 和 `sha256`，图片还提供 `imageAssetId`、`width` 和 `height`。SDK 提供通用的 `downloadAsset` 和只接受图片的 `downloadAssetImage`。
+
 ## 清理本机游戏素材缓存（Windows）
 
 ```sh

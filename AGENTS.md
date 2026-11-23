@@ -69,15 +69,15 @@
 - 本地：`icon-countdown/tasks/`、`generated/`、`generated-assets/`、`locks/`；不提交真实素材与账号结果。
 - 离线：`tests/icon-tasks.test.ts`；显式真实写测试：`scripts/icon-tasks-smoke.ts`，环境变量 `RBX_LIVE_GENERATED_ICON_UNIVERSE`，命令 `npm run test:live:icons`。
 
-## 图片素材上传与原图下载
+## 图片素材上传与素材下载
 
 - 通用 PNG/JPEG 上传：`src/assets/upload.ts`；异步提交、查询与回执：`src/assets/operations.ts`，活动图片复用该流程。CLI：`src/cli/commands/assets.ts`，命令 `asset upload/operation`；SDK：`uploadAssetImage/getAssetOperation`。
 - 默认 `Image`，可选 `Decal`，显式指定单个 User 或 Group creator，保留原文件字节。离线 `--dry-run`。上传用 `asset:read/write`，查操作用 `asset:read`。保存操作 ID 后轮询，未知结果不重试 POST；回执返回素材 ID、URI 和独立的审核状态。
 - 本地回执与原图：应用数据目录的 `asset-backups/`；离线验证：`tests/asset-upload.test.ts`。
 
-- 下载与 Decal 纹理引用解析模块：`src/assets/download.ts`。
+- 下载与 Decal 纹理引用解析模块：`src/assets/download.ts`。支持 PNG/JPEG、Ogg/MP3/WAV，按文件内容识别格式并保留 Roblox 交付的原始字节。
 - 命令入口：`src/cli/main.ts`；SDK 导出：`src/index.ts`。
-- 离线验证：`tests/asset-download.test.ts`；图片保存在用户指定路径或当前目录。
+- 离线验证：`tests/asset-download.test.ts`；素材保存在用户指定路径或当前目录，默认以素材 ID 命名。
 
 ## 玩家清档
 

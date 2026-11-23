@@ -12,7 +12,7 @@ export { GroupRoles, groupPlayerInput } from './groups/roles.js';
 export type { GroupRole, GroupMember, RoleSelector } from './groups/roles.js';
 export { UserRestrictions, banBody } from './moderation/restrictions.js';
 export type { BanOptions } from './moderation/restrictions.js';
-export { downloadAssetImage, parseAssetId } from './assets/download.js';
+export { downloadAsset, downloadAssetImage, parseAssetId } from './assets/download.js';
 export type { AssetDownloadOptions } from './assets/download.js';
 export { getAssetOperation, uploadAssetImage } from './assets/upload.js';
 export type { AssetUploadOptions } from './assets/upload.js';

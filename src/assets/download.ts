@@ -3,7 +3,7 @@ import { mkdir, open, rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { AppError, id } from '../core/errors.js';
 import { HttpClient } from '../transport/http-client.js';
-import { imageInfo } from '../icons/frames.js';
+import { imageInfo, type IconImage } from '../icons/frames.js';
 
 export function parseAssetId(input: string): string {
   return id(input.trim().replace(/^rbxassetid:\/\//i, ''));
@@ -15,8 +15,25 @@ export interface AssetDownloadOptions {
   fetch?: typeof fetch;
 }
 
-/** Download Roblox's delivered PNG/JPEG bytes, without thumbnail rendering or re-encoding. */
+type ImageAsset = IconImage & { assetId: string; imageAssetId: string };
+type AudioAsset = { assetId: string; format: 'ogg' | 'mp3' | 'wav' };
+
+/** Download Roblox's delivered image or audio bytes without re-encoding. */
+export async function downloadAsset(http: HttpClient, input: string, options: AssetDownloadOptions = {}) {
+  const { data, info } = await readAsset(http, input, options, true);
+  return { ...info, ...await saveAsset(data, info, options) };
+}
+
+/** Download Roblox's delivered PNG/JPEG bytes, resolving XML Decal textures. */
 export async function downloadAssetImage(http: HttpClient, input: string, options: AssetDownloadOptions = {}) {
+  const { data, info } = await readAsset(http, input, options, false);
+  if (!('imageAssetId' in info)) throw new AppError('INVALID_RESPONSE', 'Expected an image asset.');
+  return { ...info, ...await saveAsset(data, info, options) };
+}
+
+async function readAsset(
+  http: HttpClient, input: string, options: AssetDownloadOptions, allowAudio: boolean,
+): Promise<{ data: Buffer; info: ImageAsset | AudioAsset }> {
   const assetId = parseAssetId(input);
   const seen = new Set<string>();
   let imageAssetId = assetId;
@@ -62,23 +79,18 @@ export async function downloadAssetImage(http: HttpClient, input: string, option
     }
     const info = imageInfo(data);
     if (info && info.width > 0 && info.height > 0) {
-      const path = resolve(options.output ?? `${assetId}.${info.format === 'jpeg' ? 'jpg' : 'png'}`);
-      if (options.signal?.aborted) throw new AppError('CANCELLED', 'Operation cancelled.');
-      let created = false;
-      try {
-        await mkdir(dirname(path), { recursive: true });
-        const file = await open(path, 'wx');
-        created = true;
-        try { await file.writeFile(data); } finally { await file.close(); }
-      } catch (error) {
-        if (created) await rm(path, { force: true }).catch(() => {});
-        throw new AppError('STORAGE_ERROR', (error as NodeJS.ErrnoException).code === 'EEXIST' ? 'Output already exists; choose a different --output path.' : 'Cannot save the asset image.');
-      }
-      return { assetId, imageAssetId, path, ...info, bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') };
+      return { data, info: { assetId, imageAssetId, ...info } };
+    }
+    if (allowAudio && depth === 0) {
+      const format = audioFormat(data);
+      if (format) return { data, info: { assetId, format } };
     }
     const xml = data.toString('utf8');
     const texture = /<Content\b[^>]*\bname=["']Texture["'][^>]*>\s*<url>\s*([^<]+)\s*<\/url>\s*<\/Content>/i.exec(xml)?.[1]?.trim();
-    if (!xml.includes('<roblox') || !texture) throw new AppError('INVALID_RESPONSE', 'Asset is not a supported PNG/JPEG image or XML Decal.');
+    if (!xml.includes('<roblox') || !texture) {
+      const audio = allowAudio && depth === 0 ? ', Ogg/MP3/WAV audio,' : '';
+      throw new AppError('INVALID_RESPONSE', 'Asset is not a supported PNG/JPEG image' + audio + ' or XML Decal.');
+    }
     if (/^rbxassetid:\/\//i.test(texture)) imageAssetId = parseAssetId(texture);
     else {
       let reference: URL;
@@ -88,4 +100,45 @@ export async function downloadAssetImage(http: HttpClient, input: string, option
     }
   }
   throw new AppError('INVALID_RESPONSE', 'Too many Decal texture references.');
+}
+
+function audioFormat(data: Buffer): AudioAsset['format'] | null {
+  if (data.length >= 28 && data.toString('latin1', 0, 4) === 'OggS' && data[4] === 0) {
+    const packetStart = 27 + data[26]!;
+    const codec = data.toString('latin1', packetStart, packetStart + 8);
+    if (['\x01vorbis', 'OpusHead', 'Speex   ', '\x7fFLAC'].some(magic => codec.startsWith(magic))) return 'ogg';
+  }
+  if (data.length >= 12 && data.toString('latin1', 0, 4) === 'RIFF' && data.toString('latin1', 8, 12) === 'WAVE') return 'wav';
+
+  let frame = 0;
+  if (data.length >= 10 && data.toString('latin1', 0, 3) === 'ID3') {
+    const tagSize = data.subarray(6, 10);
+    if (tagSize.some(byte => byte >= 128)) return null;
+    frame = 10 + tagSize.reduce((size, byte) => size * 128 + byte, 0);
+    if (data[3] === 4 && (data[5]! & 0x10)) frame += 10;
+  }
+  if (data.length < frame + 4) return null;
+  const flags = data[frame + 1]!;
+  const rates = data[frame + 2]!;
+  if (data[frame] === 0xff && (flags & 0xe0) === 0xe0 && (flags & 0x18) !== 0x08
+    && (flags & 0x06) === 0x02 && (rates & 0xf0) !== 0xf0 && (rates & 0x0c) !== 0x0c) return 'mp3';
+  return null;
+}
+
+async function saveAsset(data: Buffer, info: ImageAsset | AudioAsset, options: AssetDownloadOptions) {
+  const extension = info.format === 'jpeg' ? 'jpg' : info.format;
+  const path = resolve(options.output ?? (info.assetId + '.' + extension));
+  if (options.signal?.aborted) throw new AppError('CANCELLED', 'Operation cancelled.');
+  let created = false;
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    const file = await open(path, 'wx');
+    created = true;
+    try { await file.writeFile(data); } finally { await file.close(); }
+  } catch (error) {
+    if (created) await rm(path, { force: true }).catch(() => {});
+    const message = 'imageAssetId' in info ? 'Cannot save the asset image.' : 'Cannot save the asset audio.';
+    throw new AppError('STORAGE_ERROR', (error as NodeJS.ErrnoException).code === 'EEXIST' ? 'Output already exists; choose a different --output path.' : message);
+  }
+  return { path, bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') };
 }
