@@ -827,7 +827,7 @@ rbx subscription activate "Example Development" EXP-1234567890123456789 --short-
 
 - `list` 返回完整分页的商品和销售状态，`get` 核对商品与目标 Universe 的归属。读取也能识别已有商品的本币计价。
 - `create` 支持 Robux 月订阅、最低 49 Robux 和固定开启的区域计价。类型可选 `consumable`、`currency` 或 `durable`。封面接受 PNG/JPEG。创建预览可离线运行，真实创建先检查重名，新商品保持未上架。
-- `update` 仅修改显式指定的名称、简介、价格和封面。封面单独上传。商品已创建但传图失败时，凭返回的 `productId` 使用 `update --image` 补传。
+- `update` 仅修改显式指定的简介、Robux 月价和封面。商品名称与类型在创建时确定。封面单独上传，商品已创建但传图失败时，凭返回的 `productId` 使用 `update --image` 补传。
 - `activate` 将指定商品上架。首次可能需要确认永久体验短名，可先用 `--dry-run` 查看 Roblox 建议，再用 `--short-name` 显式提交。修改和上架的预览需要读取当前配置。
 - CLI 在应用数据目录的 `subscription-backups/` 保存写前快照、封面及写后回执。配置或状态回读未确认时退出码为 `3`，可用 `list/get` 查询实际结果。封面回读核对的是素材引用，审核和客户端显示需另行验证。
 

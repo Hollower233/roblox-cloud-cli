@@ -33,7 +33,7 @@ export function registerSubscriptions(program: Command, context: CommandContext)
       write(game, options.dryRun, (products, universeId, writeOptions) => products.create(universeId, options, writeOptions),
         options.dryRun ? 'none' : 'cookie'));
   subscriptions.command('update <game> <product-id>').description('Change only the selected fields or upload a cover')
-    .option('--name <text>').option('--description <text>').option('--price <robux>', 'Monthly base price', subscriptionRobuxPrice)
+    .option('--description <text>').option('--price <robux>', 'Monthly base price', subscriptionRobuxPrice)
     .option('--image <path>', 'PNG or JPEG cover').option('--dry-run', 'Read current settings and preview the changes')
     .action((game: string, input: string, options: UpdateSubscriptionFields & { dryRun?: boolean }) =>
       write(game, options.dryRun, (products, universeId, writeOptions) => products.update(universeId, input, options, writeOptions)));

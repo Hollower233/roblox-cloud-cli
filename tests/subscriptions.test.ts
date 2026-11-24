@@ -168,10 +168,12 @@ test('subscription update patches only changed fields and answers a rejected CSR
     }
     return Response.json({ ...product, priceInRobux: updated ? 349 : 299 });
   }));
-  const plan = await sdk.update(universeId, productId, { name: 'VIP', price: 349 }, { dryRun: true });
+  const renamed = { name: 'VIP Renamed', price: 349 };
+  await assert.rejects(sdk.update(universeId, productId, renamed), { code: 'ARGUMENT_ERROR' });
+  const plan = await sdk.update(universeId, productId, { description, price: 349 }, { dryRun: true });
   assert.deepEqual(plan.request.body, { priceInRobux: 349 });
   assert.equal(patches, 0);
-  const result = await sdk.update(universeId, productId, { name: 'VIP', price: 349 }, instant);
+  const result = await sdk.update(universeId, productId, { description, price: 349 }, instant);
   assert.equal(patches, 2);
   assert.equal(result.state, 'verified');
   assert.equal(result.readback?.priceInRobux, 349);
@@ -217,5 +219,7 @@ test('compiled CLI accepts subscription IDs and previews create without a cookie
     const query = cli('get', universeId, productId);
     assert.equal(query.status, 4, query.stderr + query.stdout);
     assert.match(JSON.parse(query.stdout).error.message, /rbx auth cookie set/);
+    const rename = cli('update', universeId, productId, '--name', 'VIP Renamed');
+    assert.equal(rename.status, 2, rename.stderr + rename.stdout);
   });
 });

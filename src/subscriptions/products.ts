@@ -34,7 +34,7 @@ export interface CreateSubscriptionFields {
   type: SubscriptionProductType;
   image: string;
 }
-export type UpdateSubscriptionFields = Partial<Pick<CreateSubscriptionFields, 'name' | 'description' | 'price' | 'image'>>;
+export type UpdateSubscriptionFields = Partial<Pick<CreateSubscriptionFields, 'description' | 'price' | 'image'>>;
 export interface SubscriptionWriteOptions extends WriteOptions {
   sleep?: (ms: number) => Promise<void>;
 }
@@ -214,7 +214,7 @@ export class SubscriptionProducts {
     const productId = subscriptionProductId(input), collection = collectionUrl(universeId);
     const url = `${collection}/${productId.slice(4)}`;
     const body: JsonObject = {};
-    if (fields.name !== undefined) body.name = checkedText(fields.name, 'name');
+    if ('name' in fields && fields.name !== undefined) throw new AppError('ARGUMENT_ERROR', 'Roblox subscription names are fixed at creation.');
     if (fields.description !== undefined) body.description = checkedText(fields.description, 'description');
     if (fields.price !== undefined) body.priceInRobux = subscriptionRobuxPrice(fields.price);
     if (!Object.keys(body).length && fields.image === undefined) throw new AppError('ARGUMENT_ERROR', 'Provide at least one subscription field to update.');
