@@ -41,8 +41,6 @@ export interface SubscriptionWriteOptions extends WriteOptions {
 export interface SubscriptionReceipt extends WriteReceipt {
   productId?: string;
   cover?: { bytes: number; sha256: string; format: 'png' | 'jpeg'; width: number; height: number };
-  shortName?: string;
-  suggestedShortName?: string;
 }
 
 function collectionUrl(universeId: string): string {
@@ -90,15 +88,14 @@ function readProduct(value: unknown, universeId: string, expectedId?: string): S
   };
 }
 
-function checkedText(input: string, kind: 'name' | 'description' | 'short name'): string {
+function checkedText(input: string, kind: 'name' | 'description'): string {
   const value = typeof input === 'string' ? input.trim() : '';
   if (kind === 'description') {
     if (value.length >= 10 && value.length <= 1000) return value;
     throw new AppError('ARGUMENT_ERROR', 'Subscription description must contain 10–1000 UTF-16 units.');
   }
-  const short = kind === 'short name', min = short ? 2 : 1, max = short ? 25 : 29;
-  if (value.length >= min && value.length <= max && /^[a-zA-Z0-9.,:/!?@#&' ]+$/.test(value)) return value;
-  throw new AppError('ARGUMENT_ERROR', `Subscription ${kind} must use ${min}–${max} characters accepted by Creator Dashboard (English letters, numbers, spaces, or .,:/!?@#&').`);
+  if (value.length <= 29 && /^[a-zA-Z0-9.,:/!?@#&' ]+$/.test(value)) return value;
+  throw new AppError('ARGUMENT_ERROR', "Subscription name must use 1–29 characters accepted by Creator Dashboard (English letters, numbers, spaces, or .,:/!?@#&').");
 }
 
 export function subscriptionRobuxPrice(value: number | string): number {
@@ -254,44 +251,24 @@ export class SubscriptionProducts {
     return saveWriteReceipt(receipt);
   }
 
-  async activate(universeId: string, input: string, options: SubscriptionWriteOptions & { shortName?: string } = {}): Promise<SubscriptionReceipt> {
-    const productId = subscriptionProductId(input), collection = collectionUrl(universeId), shortNameUrl = `${collection}/shortened-name`;
-    const shortName = options.shortName === undefined ? undefined : checkedText(options.shortName, 'short name');
+  async activate(universeId: string, input: string, options: SubscriptionWriteOptions = {}): Promise<SubscriptionReceipt> {
+    const productId = subscriptionProductId(input), collection = collectionUrl(universeId);
     const before = await this.get(universeId, productId);
     const request = { method: 'POST' as const, url: `${collection}/${productId.slice(4)}/activate` };
     const receipt: SubscriptionReceipt = { universeId, productId, state: 'planned', request, readback: { ...before } };
-    if (before.status === 'active' && shortName === undefined) return { ...receipt, state: options.dryRun ? 'planned' : 'verified' };
-    if (before.status !== 'active' && before.status !== 'inactive' && before.status !== 'off-sale') {
+    if (before.status === 'active') return { ...receipt, state: options.dryRun ? 'planned' : 'verified' };
+    if (before.status !== 'inactive' && before.status !== 'off-sale') {
       throw new AppError('ARGUMENT_ERROR', `Subscription cannot be activated from state ${before.status}.`);
     }
-    const names = object(await this.http.request(shortNameUrl, { cookieAuth: true }), true);
-    const currentName = typeof names.shortenedName === 'string' && names.shortenedName ? names.shortenedName : undefined;
-    const suggested = typeof names.suggestedShortenedName === 'string' && names.suggestedShortenedName ? names.suggestedShortenedName : undefined;
-    if (currentName && shortName !== undefined && shortName !== currentName) {
-      throw new AppError('ARGUMENT_ERROR', 'The permanent experience short name is already set to a different value.');
-    }
-    receipt.shortName = currentName ?? shortName;
-    receipt.suggestedShortName = suggested;
     if (options.dryRun) return receipt;
-    if (before.status === 'active') return { ...receipt, state: 'verified' };
-    if (!currentName && !shortName) {
-      throw new AppError('ARGUMENT_ERROR', 'First activation requires a permanent experience short name. Use --dry-run for the Roblox suggestion and pass --short-name deliberately.');
-    }
-    receipt.backupPath = await backup(options.backupDirectory, universeId, request, { product: before, currentName, shortName });
+    receipt.backupPath = await backup(options.backupDirectory, universeId, request, before);
     receipt.state = 'unverified';
-    let nameSubmitted = false;
     try {
-      if (!currentName && shortName) {
-        await this.http.request(shortNameUrl, { cookieAuth: true, method: 'POST', body: { shortenedName: shortName } });
-        nameSubmitted = true;
-        const after = object(await this.http.request(shortNameUrl, { cookieAuth: true }), true);
-        if (after.shortenedName !== shortName) throw new AppError('INVALID_RESPONSE', 'Roblox did not confirm the permanent short name.');
-      }
       const result = object(await this.http.request(request.url, { cookieAuth: true, method: 'POST' }), true);
       if (result.success !== true) throw new AppError('INVALID_RESPONSE', 'Roblox did not confirm the activation request.');
       await this.verify(receipt, options, product => product.status === 'active');
     } catch (error) {
-      if (!nameSubmitted && isRejected(error)) throw error;
+      if (isRejected(error)) throw error;
       receipt.error = errorInfo(error);
     }
     return saveWriteReceipt(receipt);

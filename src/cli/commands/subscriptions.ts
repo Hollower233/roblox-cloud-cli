@@ -38,9 +38,7 @@ export function registerSubscriptions(program: Command, context: CommandContext)
     .action((game: string, input: string, options: UpdateSubscriptionFields & { dryRun?: boolean }) =>
       write(game, options.dryRun, (products, universeId, writeOptions) => products.update(universeId, input, options, writeOptions)));
   subscriptions.command('activate <game> <product-id>').description('Put a subscription up for sale')
-    .option('--short-name <text>', 'Permanent experience short name, only needed for the first activation')
-    .option('--dry-run', 'Read the current product and the experience short-name requirement')
-    .action((game: string, input: string, options: { dryRun?: boolean; shortName?: string }) =>
-      write(game, options.dryRun, (products, universeId, writeOptions) =>
-        products.activate(universeId, input, { ...writeOptions, shortName: options.shortName })));
+    .option('--dry-run', 'Read the current product and preview activation')
+    .action((game: string, input: string, options: { dryRun?: boolean }) =>
+      write(game, options.dryRun, (products, universeId, writeOptions) => products.activate(universeId, input, writeOptions)));
 }

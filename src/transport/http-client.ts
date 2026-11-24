@@ -38,11 +38,9 @@ export class HttpClient {
     const removePlace = options.cookieAuth && target.host === 'apis.roblox.com' && method === 'POST'
       && /^\/universes\/v1\/universes\/[1-9]\d*\/places\/[1-9]\d*\/remove-place$/.test(target.pathname) && !hasBody;
     const subscription = options.cookieAuth && target.host === 'apis.roblox.com'
-      ? /^\/experience-subscriptions\/v1\/experiences\/[1-9]\d*\/experience-subscriptions(?:\/([1-9]\d{0,127}|shortened-name)(?:\/(activate|upload-image))?)?$/.exec(target.pathname)
+      ? /^\/experience-subscriptions\/v1\/experiences\/[1-9]\d*\/experience-subscriptions(?:\/([1-9]\d{0,127})(?:\/(activate|upload-image))?)?$/.exec(target.pathname)
       : null;
-    const confirmShortName = subscription?.[1] === 'shortened-name' && !subscription[2] && method === 'POST';
     const subscriptionList = subscription !== null && !subscription[1] && method === 'GET';
-    const subscriptionProduct = !!subscription?.[1] && subscription[1] !== 'shortened-name';
     if (options.cookieAuth) {
       const placeConfiguration = target.host === 'develop.roblox.com' && /^\/v2\/places\/[1-9]\d*$/.test(target.pathname)
         && (method === 'GET' || method === 'PATCH');
@@ -52,11 +50,10 @@ export class HttpClient {
       const subscriptionUser = target.host === 'users.roblox.com' && target.pathname === '/v1/users/authenticated' && method === 'GET';
       const jsonBody = options.body !== undefined && options.rawBody === undefined && options.form === undefined;
       const subscriptionOperation = subscription !== null && (
-        (!subscription[2] && method === 'GET' && (!subscription[1] || subscriptionProduct || subscription[1] === 'shortened-name'))
-        || ((!subscription[1] && method === 'POST' || confirmShortName
-          || subscriptionProduct && !subscription[2] && method === 'PATCH') && jsonBody)
-        || (subscriptionProduct && subscription[2] === 'activate' && method === 'POST' && !hasBody)
-        || (subscriptionProduct && subscription[2] === 'upload-image' && method === 'POST' && options.form !== undefined
+        (!subscription[2] && method === 'GET')
+        || (!subscription[2] && method === (subscription[1] ? 'PATCH' : 'POST') && jsonBody)
+        || (subscription[2] === 'activate' && method === 'POST' && !hasBody)
+        || (subscription[2] === 'upload-image' && method === 'POST' && options.form !== undefined
           && options.body === undefined && options.rawBody === undefined)
       );
       if ((!placeConfiguration && !createPlace && !removePlace && !subscriptionUser && !subscriptionOperation)
@@ -134,7 +131,7 @@ export class HttpClient {
           throw new AppError(code, `Roblox ${target.pathname} returned HTTP ${response.status}.${validation}`, response.status);
         }
         if (options.rawResponse) return { status: response.status, text: await response.text(), headers: Object.fromEntries(response.headers) } as T;
-        if (removePlace || confirmShortName) {
+        if (removePlace) {
           await response.body?.cancel();
           return undefined as T;
         }

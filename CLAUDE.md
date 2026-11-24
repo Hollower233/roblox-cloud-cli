@@ -198,7 +198,7 @@
 
 - 商品管理：`src/subscriptions/products.ts`。CLI：`src/cli/commands/subscriptions.ts`，命令 `subscription list/get/create/update/activate`，每次显式指定游戏。SDK：`SubscriptionProducts`，由 `src/index.ts` 导出。
 - 使用 Creator Dashboard 会话接口，Cookie 由 `rbx auth cookie set` 提供。封面上传用同一会话获取操作者 ID。Cookie 仅发送到传输层白名单内的方法和路径。商品 ID 保留十进制字符串并输出 `EXP-…`。
-- 创建支持 Robux 月订阅，最低 49 Robux，开启区域计价；先创建未上架商品再传封面。保留已创建 ID，传图失败可用 `update --image` 补传。首次上架需要设置永久体验短名时，显式提供 `--short-name`。
+- 创建支持 Robux 月订阅，最低 49 Robux，开启区域计价；先创建未上架商品再传封面。保留已创建 ID，传图失败可用 `update --image` 补传。上架直接请求商品激活并回读销售状态。
 - 写入支持 `--dry-run`、写前备份和回读，已受理或结果不明时不重发写请求。CLI 本地备份 `subscription-backups/`；离线验证 `tests/subscriptions.test.ts`，真实商品与账号结果不提交。
 
 ## 开发者产品同步

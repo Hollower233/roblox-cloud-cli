@@ -74,9 +74,11 @@ test('subscription update refuses mismatched identities and Cookie destinations'
   });
   await assert.rejects(new SubscriptionProducts(http).update(universeId, productId, { price: 300 }), { code: 'INVALID_RESPONSE' });
   for (const target of [`${collection}?other=1`, `${collection}?Cursor=a&Cursor=b`, `${productUrl}?Cursor=a`,
-    `${collection}/permission`, `${collection}/shortened-name/activate`, `${actorUrl}/roles`]) {
+    `${collection}/permission`, `${collection}/shortened-name`, `${collection}/shortened-name/activate`, `${actorUrl}/roles`]) {
     await assert.rejects(http.request(target, { cookieAuth: true }), { code: 'ARGUMENT_ERROR' });
   }
+  await assert.rejects(http.request(`${collection}/shortened-name`,
+    { cookieAuth: true, method: 'POST', body: { shortenedName: 'Example Game' } }), { code: 'ARGUMENT_ERROR' });
   await assert.rejects(http.request(productUrl, { cookieAuth: true, method: 'DELETE' }), { code: 'ARGUMENT_ERROR' });
   await assert.rejects(http.request(productUrl, { cookieAuth: true, auth: true }), { code: 'ARGUMENT_ERROR' });
   assert.equal(calls, 1);
@@ -179,34 +181,30 @@ test('subscription update patches only changed fields and answers a rejected CSR
   assert.equal(result.readback?.priceInRobux, 349);
 });
 
-test('subscription activate requires explicit permanent short name and verifies ordering', async () => {
-  let active = false, name: string | undefined;
-  const writes: string[] = [];
+test('subscription activate writes only the activation request and reads back the sale status', async () => {
+  let active = false;
+  const calls: string[] = [];
   const sdk = new SubscriptionProducts(mock((target, init) => {
-    if (target.href === productUrl) return Response.json({ ...product, productStatusType: active ? 2 : 1 });
+    calls.push(`${init.method} ${target.href}`);
     if (init.method === 'GET') {
-      assert.equal(target.href, `${collection}/shortened-name`);
-      return Response.json({ shortenedName: name, suggestedShortenedName: 'Example Game' });
-    }
-    writes.push(target.href);
-    if (target.href === `${collection}/shortened-name`) {
-      name = JSON.parse(String(init.body)).shortenedName;
-      return new Response(null, { status: 204 });
+      assert.equal(target.href, productUrl);
+      return Response.json({ ...product, productStatusType: active ? 2 : 1 });
     }
     assert.equal(target.href, `${productUrl}/activate`);
     assert.equal(init.body, undefined);
-    assert.equal(name, 'Example Game');
     active = true;
     return Response.json({ success: true });
   }));
   const preview = await sdk.activate(universeId, productId, { dryRun: true });
-  assert.equal(preview.suggestedShortName, 'Example Game');
-  await assert.rejects(sdk.activate(universeId, productId), { code: 'ARGUMENT_ERROR' });
-  assert.deepEqual(writes, []);
-  const result = await sdk.activate(universeId, productId, { ...instant, shortName: 'Example Game' });
+  assert.equal(preview.state, 'planned');
+  assert.equal(preview.readback?.status, 'inactive');
+  assert.deepEqual(calls.splice(0), [`GET ${productUrl}`]);
+  const result = await sdk.activate(universeId, productId, instant);
   assert.equal(result.state, 'verified');
   assert.equal(result.readback?.status, 'active');
-  assert.deepEqual(writes, [`${collection}/shortened-name`, `${productUrl}/activate`]);
+  assert.deepEqual(calls.splice(0), [`GET ${productUrl}`, `POST ${productUrl}/activate`, `GET ${productUrl}`]);
+  assert.equal((await sdk.activate(universeId, productId, instant)).state, 'verified');
+  assert.deepEqual(calls, [`GET ${productUrl}`]);
 });
 
 test('compiled CLI accepts subscription IDs and previews create without a cookie', async () => {
@@ -221,5 +219,7 @@ test('compiled CLI accepts subscription IDs and previews create without a cookie
     assert.match(JSON.parse(query.stdout).error.message, /rbx auth cookie set/);
     const rename = cli('update', universeId, productId, '--name', 'VIP Renamed');
     assert.equal(rename.status, 2, rename.stderr + rename.stdout);
+    const shortName = cli('activate', universeId, productId, '--short-name', 'Example Game');
+    assert.equal(shortName.status, 2, shortName.stderr + shortName.stdout);
   });
 });

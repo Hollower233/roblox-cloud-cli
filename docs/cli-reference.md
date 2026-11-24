@@ -820,7 +820,7 @@ rbx subscription get "Example Development" EXP-1234567890123456789
 rbx subscription create "Example Development" --name VIP --description "Claim daily rewards and get an extra choice." --price 299 --type consumable --image ./vip.png --dry-run
 rbx subscription update "Example Development" EXP-1234567890123456789 --image ./vip.png
 rbx subscription activate "Example Development" EXP-1234567890123456789 --dry-run
-rbx subscription activate "Example Development" EXP-1234567890123456789 --short-name "Example Game"
+rbx subscription activate "Example Development" EXP-1234567890123456789
 ```
 
 每条命令都指定游戏名或 Universe ID。管理命令使用 Creator Dashboard 会话，通过 `rbx auth cookie set` 保存 Cookie。订阅 ID 始终按十进制字符串处理，输出为 `EXP-…`。
@@ -828,7 +828,7 @@ rbx subscription activate "Example Development" EXP-1234567890123456789 --short-
 - `list` 返回完整分页的商品和销售状态，`get` 核对商品与目标 Universe 的归属。读取也能识别已有商品的本币计价。
 - `create` 支持 Robux 月订阅、最低 49 Robux 和固定开启的区域计价。类型可选 `consumable`、`currency` 或 `durable`。封面接受 PNG/JPEG。创建预览可离线运行，真实创建先检查重名，新商品保持未上架。
 - `update` 仅修改显式指定的简介、Robux 月价和封面。商品名称与类型在创建时确定。封面单独上传，商品已创建但传图失败时，凭返回的 `productId` 使用 `update --image` 补传。
-- `activate` 将指定商品上架。首次可能需要确认永久体验短名，可先用 `--dry-run` 查看 Roblox 建议，再用 `--short-name` 显式提交。修改和上架的预览需要读取当前配置。
+- `activate` 将指定商品上架并回读销售状态。已上架时只读取当前状态。修改和上架的预览需要读取当前商品配置。
 - CLI 在应用数据目录的 `subscription-backups/` 保存写前快照、封面及写后回执。配置或状态回读未确认时退出码为 `3`，可用 `list/get` 查询实际结果。封面回读核对的是素材引用，审核和客户端显示需另行验证。
 
 SDK 通过 `SubscriptionProducts` 提供相同操作。另见 [Roblox 体验订阅文档](https://create.roblox.com/docs/production/monetization/subscriptions)。
