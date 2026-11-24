@@ -9,6 +9,7 @@ import { registerStudioRelease } from './commands/studio-release.js';
 import { registerEvents } from './commands/events.js';
 import { registerGames } from './commands/games.js';
 import { registerDeveloperProducts } from './commands/devproducts.js';
+import { registerSubscriptions } from './commands/subscriptions.js';
 import { registerExperiments } from './commands/experiments.js';
 import { registerLocalizationTable } from './commands/localization-table.js';
 import { countdownLog } from './countdown-log.js';
@@ -161,7 +162,7 @@ localization.command('write <universe>').description('Write selected game-info f
 
 const auth = program.command('auth').description('Configure and validate API credentials');
 registerAuthPermissions(auth, { store, json, signal: abort.signal });
-const cookieAuth = auth.command('cookie').description('Manage the Roblox session cookie used by Place operations');
+const cookieAuth = auth.command('cookie').description('Manage the Roblox session cookie used by Place and subscription operations');
 cookieAuth.command('set').description('Enter and encrypt a Roblox session cookie (Windows DPAPI)').action(async () => {
   if (!process.stdin.isTTY || !process.stderr.isTTY) throw new AppError('ARGUMENT_ERROR', 'Run rbx auth cookie set in an interactive terminal.');
   const cookie = await password({ message: 'Roblox .ROBLOSECURITY', mask: '*' }, { output: process.stderr, signal: abort.signal });
@@ -522,6 +523,7 @@ registerConfigs(program, cloudContext);
 registerPlaces(program, cloudContext);
 registerEvents(program, cloudContext);
 registerDeveloperProducts(program, cloudContext);
+registerSubscriptions(program, cloudContext);
 registerExperiments(program, cloudContext);
 registerLocalizationTable(program, localization, abort.signal);
 

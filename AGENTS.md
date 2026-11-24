@@ -151,7 +151,7 @@
 
 - 配置读写与回读核对：`src/universes/social-slots.ts`；CLI：`src/cli/commands/places.ts`；SDK 导出：`src/index.ts`。
 - `places social-slots read/write --universe <id-or-name> --place <id>` 只针对一个 Place，核对 Develop API 返回的 Place 和 Universe ID。写入支持 `disabled`（API `Empty`）、`automatic`、`custom`（需 `--count`），只 PATCH Social Slots 字段，不重启服务器。
-- `auth cookie set/clear` 管理手动录入的会话，存于应用数据目录的 `cookie.dpapi`。Cookie 仅发送到指定的 Social Slots 配置及子 Place 创建、移除端点。只对确认拒绝的 CSRF 挑战应答一次。Key 权限诊断不验证会话。
+- `auth cookie set/clear` 管理手动录入的会话，存于应用数据目录的 `cookie.dpapi`。Cookie 仅发送到白名单端点。只对确认拒绝的 CSRF 挑战应答一次。Key 权限诊断不验证会话。
 - 离线验证：`tests/social-slots.test.ts`。
 
 ## 服务器重启
@@ -193,6 +193,13 @@
 - CLI 写前备份与写后回执：应用数据目录 `event-backups/`（原配置/请求、`.result.json`；图片另存 `.png`、已接受操作 `.operation.json`）。删除备份不能恢复原活动 ID 或 RSVP；SDK 活动备份目录可选，图片上传必须提供备份目录。
 - 默认列表为进行中及未来活动，`--all` 包含结束活动；完整翻页并拒绝循环游标。离线验证：`tests/events.test.ts`，仅虚构数据，不运行真实写入。
 - 文本规则唯一源头：`src/events/rules.ts`；`events rules` 离线显示规则与来源，SDK 导出 `eventRules/eventTextSummary/validateEventText`。按官方 Dashboard 前端快照（2026-11-13）校验 title/subtitle/description 的 25/25/1000 UTF-16 单位上限，emoji、变体符、连接符计入；不自动截断或改写。CLI 参数／文件与 SDK 同步校验，超限早于请求；CLI 创建修改回执 `validation` 显示已提供字段的长度与剩余量，声明本地校验不包含服务端审核。400 文本异常提示规则，不断言必为超长；HTTP 诊断脱敏且限制输出长度。
+
+## 体验订阅商品
+
+- 商品管理：`src/subscriptions/products.ts`。CLI：`src/cli/commands/subscriptions.ts`，命令 `subscription list/get/create/update/activate`，每次显式指定游戏。SDK：`SubscriptionProducts`，由 `src/index.ts` 导出。
+- 使用 Creator Dashboard 会话接口，Cookie 由 `rbx auth cookie set` 提供。封面上传用同一会话获取操作者 ID。Cookie 仅发送到传输层白名单内的方法和路径。商品 ID 保留十进制字符串并输出 `EXP-…`。
+- 创建支持 Robux 月订阅，最低 49 Robux，开启区域计价；先创建未上架商品再传封面。保留已创建 ID，传图失败可用 `update --image` 补传。首次上架需要设置永久体验短名时，显式提供 `--short-name`。
+- 写入支持 `--dry-run`、写前备份和回读，已受理或结果不明时不重发写请求。CLI 本地备份 `subscription-backups/`；离线验证 `tests/subscriptions.test.ts`，真实商品与账号结果不提交。
 
 ## 开发者产品同步
 

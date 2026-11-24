@@ -75,6 +75,8 @@ export type { EnsureInternalResult, InternalPatchInspection, InternalPatchPlan }
 export { DEVPRODUCT_TABLE_NAME, classifyDeveloperProductIcon, compareIds, createDeveloperProduct, getDeveloperProduct, listDeveloperProducts, loadDeveloperProductTable, parseDeveloperProductSource, parseDeveloperProductTable, updateDeveloperProduct } from './devproducts/products.js';
 export type { DeveloperProduct, DeveloperProductIconStatus, DeveloperProductRow, ProductFields } from './devproducts/products.js';
 export { uploadDeveloperProductIcon } from './devproducts/icon.js';
+export { SubscriptionProducts, subscriptionProductId, subscriptionRobuxPrice } from './subscriptions/products.js';
+export type { CreateSubscriptionFields, SubscriptionProduct, SubscriptionProductType, SubscriptionReceipt, SubscriptionWriteOptions, UpdateSubscriptionFields } from './subscriptions/products.js';
 export type { DeveloperProductIconOptions } from './devproducts/icon.js';
 export { CONFIRM_INSTRUCTION, READBACK_DELAYS_MS, STALE_INSTRUCTION, planToken, planUniverse, syncDeveloperProducts, syncWarnings } from './devproducts/sync.js';
 export type { ActionResult, ActionState, PlannedAction, DeveloperProductSyncOptions, DeveloperProductSyncResult, UniversePlan, UniverseResult } from './devproducts/sync.js';

@@ -25,7 +25,7 @@ export function getAssetOperation(http: HttpClient, operationId: string): Promis
   return readAssetOperation(http, operationId, assetResult);
 }
 
-async function readImage(path: string) {
+export async function readAssetUploadImage(path: string) {
   try {
     const file = await stat(path);
     if (!file.isFile() || file.size > maxBytes) throw new Error();
@@ -52,7 +52,7 @@ export async function uploadAssetImage(http: HttpClient, imagePath: string, opti
   if (typeof description !== 'string' || description.length > 1000) throw new AppError('ARGUMENT_ERROR', 'Asset description must be at most 1000 UTF-16 units.');
 
   const path = resolve(imagePath);
-  const { bytes, format, width, height } = await readImage(path);
+  const { bytes, format, width, height } = await readAssetUploadImage(path);
   const metadata = {
     assetType: type === 'image' ? 'Image' : 'Decal',
     displayName: name.trim(),

@@ -48,6 +48,8 @@ const features: PermissionFeature[] = [
   feature('devproduct-list', '查询开发者产品', ['devproduct list'], ['developer-product:read']),
   feature('devproduct-sync', '同步开发者产品', ['devproduct sync'], ['developer-product:read', 'developer-product:write']),
   feature('devproduct-icon', '上传开发者产品图标', ['devproduct icon'], ['developer-product:read', 'developer-product:write']),
+  feature('subscription-products', '查询和管理体验订阅商品', ['subscription list', 'subscription get', 'subscription create', 'subscription update', 'subscription activate'], [],
+    ['通过 rbx auth cookie set 配置有目标体验管理权限的 Roblox 会话。Key 检查不验证会话或账号权限。']),
   feature('configs-read', '读取配置草稿、发布值和历史', ['configs read', 'configs draft read', 'configs history'], ['universe:read']),
   feature('configs-write', '修改、发布和恢复配置', ['configs draft set', 'configs publish', 'configs restore'], rw),
   feature('experiments-read', '查询实验和异步操作', ['experiments list', 'experiments get', 'experiments operation', 'experiments stats'], ['universe:read']),

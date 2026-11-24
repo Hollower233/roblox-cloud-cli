@@ -37,15 +37,32 @@ export class HttpClient {
     let cookie: string | undefined;
     const removePlace = options.cookieAuth && target.host === 'apis.roblox.com' && method === 'POST'
       && /^\/universes\/v1\/universes\/[1-9]\d*\/places\/[1-9]\d*\/remove-place$/.test(target.pathname) && !hasBody;
+    const subscription = options.cookieAuth && target.host === 'apis.roblox.com'
+      ? /^\/experience-subscriptions\/v1\/experiences\/[1-9]\d*\/experience-subscriptions(?:\/([1-9]\d{0,127}|shortened-name)(?:\/(activate|upload-image))?)?$/.exec(target.pathname)
+      : null;
+    const confirmShortName = subscription?.[1] === 'shortened-name' && !subscription[2] && method === 'POST';
+    const subscriptionList = subscription !== null && !subscription[1] && method === 'GET';
+    const subscriptionProduct = !!subscription?.[1] && subscription[1] !== 'shortened-name';
     if (options.cookieAuth) {
       const placeConfiguration = target.host === 'develop.roblox.com' && /^\/v2\/places\/[1-9]\d*$/.test(target.pathname)
         && (method === 'GET' || method === 'PATCH');
       const createPlace = target.host === 'apis.roblox.com' && method === 'POST'
         && /^\/universes\/v1\/user\/universes\/[1-9]\d*\/places$/.test(target.pathname)
         && options.body !== undefined && options.rawBody === undefined && options.form === undefined;
-      if ((!placeConfiguration && !createPlace && !removePlace)
-        || target.search || target.hash || options.auth || options.rawResponse || options.validationDetails) {
-        throw new AppError('ARGUMENT_ERROR', 'Cookie authentication is limited to supported Place endpoints.');
+      const subscriptionUser = target.host === 'users.roblox.com' && target.pathname === '/v1/users/authenticated' && method === 'GET';
+      const jsonBody = options.body !== undefined && options.rawBody === undefined && options.form === undefined;
+      const subscriptionOperation = subscription !== null && (
+        (!subscription[2] && method === 'GET' && (!subscription[1] || subscriptionProduct || subscription[1] === 'shortened-name'))
+        || ((!subscription[1] && method === 'POST' || confirmShortName
+          || subscriptionProduct && !subscription[2] && method === 'PATCH') && jsonBody)
+        || (subscriptionProduct && subscription[2] === 'activate' && method === 'POST' && !hasBody)
+        || (subscriptionProduct && subscription[2] === 'upload-image' && method === 'POST' && options.form !== undefined
+          && options.body === undefined && options.rawBody === undefined)
+      );
+      if ((!placeConfiguration && !createPlace && !removePlace && !subscriptionUser && !subscriptionOperation)
+        || (target.search && (!subscriptionList || !validSubscriptionListQuery(target.searchParams)))
+        || target.hash || options.auth || options.rawResponse || options.validationDetails) {
+        throw new AppError('ARGUMENT_ERROR', 'Cookie authentication is limited to supported Roblox endpoints.');
       }
       if (this.options.robloxCookie === undefined) throw new AppError('AUTH_REQUIRED', 'Run rbx auth cookie set.');
       cookie = `.ROBLOSECURITY=${validateRobloxCookie(this.options.robloxCookie)}`;
@@ -73,7 +90,8 @@ export class HttpClient {
             ...(options.auth ? { 'x-api-key': this.options.apiKey! } : {}),
             ...(cookie ? { Cookie: cookie } : {}),
             ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
-            ...(hasBody && !options.form ? { 'Content-Type': 'application/json' } : {}),
+            ...(hasBody && !options.form ? { 'Content-Type': subscription
+              ? 'application/json-patch+json' : 'application/json' } : {}),
           },
           body: options.form ?? options.rawBody ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
           redirect: 'error', signal,
@@ -116,7 +134,7 @@ export class HttpClient {
           throw new AppError(code, `Roblox ${target.pathname} returned HTTP ${response.status}.${validation}`, response.status);
         }
         if (options.rawResponse) return { status: response.status, text: await response.text(), headers: Object.fromEntries(response.headers) } as T;
-        if (removePlace) {
+        if (removePlace || confirmShortName) {
           await response.body?.cancel();
           return undefined as T;
         }
@@ -131,6 +149,13 @@ export class HttpClient {
       }
     }
   }
+}
+
+function validSubscriptionListQuery(query: URLSearchParams): boolean {
+  const cursors = query.getAll('Cursor'), sizes = query.getAll('ResultsPerPage');
+  return query.size === cursors.length + sizes.length && cursors.length <= 1 && sizes.length <= 1
+    && cursors.every(cursor => cursor.length > 0 && cursor.length <= 4096)
+    && sizes.every(size => /^[1-9]\d?$/.test(size) && Number(size) <= 50);
 }
 
 async function isCsrfChallenge(response: Response): Promise<boolean> {
