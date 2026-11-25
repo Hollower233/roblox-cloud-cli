@@ -6,6 +6,7 @@ import { registerConfigs } from './commands/configs.js';
 import { registerAuthPermissions } from './commands/auth-permissions.js';
 import { registerPlaces } from './commands/places.js';
 import { registerStudioRelease } from './commands/studio-release.js';
+import { registerStudioScreenshot } from './commands/studio-screenshot.js';
 import { registerEvents } from './commands/events.js';
 import { registerGames } from './commands/games.js';
 import { registerDeveloperProducts } from './commands/devproducts.js';
@@ -616,13 +617,16 @@ studio.command('list').description('List open Studio edit sessions with their Pl
 });
 
 registerStudioRelease(studio, cloudContext, json);
+registerStudioScreenshot(studio, abort.signal, json);
 
 try { await program.parseAsync(process.argv); }
 catch (error) {
   if (error instanceof CommanderError && error.exitCode === 0) process.exitCode = 0;
   else {
     if (error instanceof CommanderError) error = new AppError('ARGUMENT_ERROR', 'Invalid command or arguments. Run rbx --help.');
-    if (abort.signal.aborted) error = new AppError('CANCELLED', 'Operation cancelled.');
+    if (abort.signal.aborted && !(error instanceof AppError && error.code === 'CANCELLED')) {
+      error = new AppError('CANCELLED', 'Operation cancelled.');
+    }
     const info = errorInfo(error);
     diagnostics?.error(info.code, info.httpStatus);
     if (json() || process.argv.includes('--json')) process.stdout.write(JSON.stringify({ schemaVersion: 1, status: 'error', error: info }) + '\n');

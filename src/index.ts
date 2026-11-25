@@ -70,6 +70,8 @@ export { DeepSeekClient, TranslationCache, translate, checkTranslation } from '.
 export type { TranslationJob, TranslationOutcome, TranslationProvider, Usage } from './translation/deepseek.js';
 export { closeStudio, findStudioExecutable, isInternalTitle, isReadyTitle, listStudioSessions, openStudio, parseStudioProcess, resolveStudioTarget, windowsStudioSystem } from './studio/launch.js';
 export type { CloseOptions, CloseResult, OpenOptions, OpenResult, StudioProcess, StudioSystem, StudioTarget } from './studio/launch.js';
+export { screenshotStudio } from './studio/screenshot.js';
+export type { StudioScreenshotOptions, StudioScreenshotResult } from './studio/screenshot.js';
 export { applyInternalPatch, enableElevatedCapabilities, ensureInternalStudio, inspectInternalPatch, INTERNAL_EXE, internalPathFor, planInternalPatch, STOCK_EXE } from './studio/internal.js';
 export type { EnsureInternalResult, InternalPatchInspection, InternalPatchPlan } from './studio/internal.js';
 export { DEVPRODUCT_TABLE_NAME, classifyDeveloperProductIcon, compareIds, createDeveloperProduct, getDeveloperProduct, listDeveloperProducts, loadDeveloperProductTable, parseDeveloperProductSource, parseDeveloperProductTable, updateDeveloperProduct } from './devproducts/products.js';

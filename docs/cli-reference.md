@@ -740,6 +740,21 @@ rbx studio close --all                # 软关闭全部编辑会话（不可与 
 - 同一 Place 已有官方会话时，`studio open` 会报错并要求先关闭；已有 Internal 会话则只切前台。Internal 身份优先按进程命令行中的 `RobloxStudioBeta_INTERNAL.exe` 判断，不依赖窗口一定出现 `[Internal]` 后缀。
 - 默认等待窗口标题从 `Place1 - Roblox Studio` 占位标题变为实际项目标题（或出现 `[Internal]`）后视为加载完成（`ready: true`），默认超时 120 秒，超时返回 `TIMEOUT`。加载完成不代表 MCP 插件已连接，连接状态以 MCP 为准。补丁失败返回 `STUDIO_PATCH_FAILED`，不会回落到官方 exe。
 - 模块：`src/studio/launch.ts`、`src/studio/internal.ts`；SDK：`resolveStudioTarget`、`openStudio`、`ensureInternalStudio`、`inspectInternalPatch`、`listStudioSessions`、`windowsStudioSystem`。离线测试：`tests/studio.test.ts`、`tests/studio-internal.test.ts`。Studio 更新后的定位链、失败扩匹配与提权验证见 [Internal 补丁维护](studio-internal.md)。
+## Studio 游戏视口截图
+
+```powershell
+rbx studio screenshot --place 123 --out vip-phone.png
+rbx studio screenshot --place 123 --device "Average Windows" --out vip-pc.png
+rbx studio screenshot --place 123 --device current --out vip-current.png
+rbx --json studio screenshot --place 123 --device i17p --out vip-phone.png
+```
+
+- Windows x64 或 ARM64。目标 Place 必须已在 Studio 编辑态打开并启用官方 MCP。截图使用 npm 安装的 Windows 专用可选依赖 `@microsoft/winappcli`，无需 API Key 或 Cookie。Studio 可被遮挡，窗口须保持打开且未最小化。
+- 默认设备是 iPhone 17 Pro 横屏，简写 `i17p`。`--device` 接受 Studio 内的设备名称或设备 ID，手机和平板按横屏拍摄。`--device current` 原样截取 Studio 当前视口。命令截取当前已显示的场景和界面。
+- CLI 切换设备后回读设置，再按 `QEngineWidget` 的实时边界保存视口 PNG。Studio 的通知如果叠在视口内，可能入镜。输出路径须为已有目录中的新 `.png` 文件。
+- JSON 返回拍摄时的设备名与 ID、方向、模拟分辨率、PNG 实际尺寸和绝对路径。模拟器缩放可导致两组尺寸不同。使用当前设备且模拟器未开启时，模拟分辨率为 `null`。
+- 使用默认或指定设备拍摄时，截图成功、失败或取消后都会尝试退出设备模拟，并回读确认 Studio 切到了 **Current device**。`restored` 报告这一结果。若 PNG 已保存而切换未确认，返回 `partial` 与退出码 3。`--device current` 全程保留当前视口。
+
 ## Studio 保存与发布
 
 ```powershell

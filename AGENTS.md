@@ -177,6 +177,12 @@
 - `studio close [games...] [--place] [--pid] [--all] [--force] [--timeout]`：默认软关闭（CloseMainWindow，Studio 自行弹保存提示，超时未关返回 `pending`），`--force` 结束编辑器及 `-editpid` 指向它的 Team Test 进程；`--all` 不可与 `--force` 同用。
 - 离线验证：`tests/studio.test.ts`、`tests/studio-internal.test.ts`。维护手册：[Internal 补丁维护](docs/studio-internal.md)。
 
+## Studio 游戏视口截图
+
+- CLI `studio screenshot --place <id> --out <path>`，注册 `src/cli/commands/studio-screenshot.ts`；SDK `screenshotStudio`，入口 `src/studio/screenshot.ts`。
+- 默认 iPhone 17 Pro 横屏（`i17p`）。官方 MCP 与设备回读由 `src/studio/device-simulator.ts` 处理；Windows 可选依赖 `@microsoft/winappcli` 按 UIA 的 `QEngineWidget` 边界保存 PNG。支持遮挡的编辑窗，最小化时报错。无需 Roblox 凭证。
+- 切换后验证设备和方向，截图后退出模拟并回读确认 Current device。`--device current` 保留当前视口。JSON 区分模拟分辨率与文件像素尺寸。离线验证：`tests/studio-screenshot.test.ts`。
+
 ## Studio 保存与发布
 
 - `studio save` 和 `studio publish` 由 CLI 直接执行，都要求 `--source-place`，复用 `src/studio/mcp.ts` 的 Windows 官方 Studio MCP。命令注册：`src/cli/commands/studio-release.ts`。
